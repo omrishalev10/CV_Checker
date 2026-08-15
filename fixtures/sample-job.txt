@@ -1,0 +1,21 @@
+Senior Frontend Engineer — Acme Corp
+
+About the role
+We're hiring a Senior Frontend Engineer to own customer-facing React applications.
+
+Requirements
+- 5+ years professional software experience
+- Strong React and TypeScript
+- Experience with responsive design and accessibility
+- Familiarity with Node.js backends and REST APIs
+- Team leadership or mentorship experience
+
+Nice to have
+- GraphQL
+- Kubernetes
+- Mobile native (iOS/Android)
+
+What you'll do
+- Ship high-quality UI features
+- Partner with design and product
+- Improve performance and maintainability

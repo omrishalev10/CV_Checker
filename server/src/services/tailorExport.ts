@@ -1,0 +1,179 @@
+import {
+  AlignmentType,
+  Document,
+  HeadingLevel,
+  Packer,
+  Paragraph,
+  TextRun,
+} from "docx";
+import PDFDocument from "pdfkit";
+
+export interface TailoredCvDoc {
+  name?: string | null;
+  headline: string;
+  summary: string;
+  skills: string[];
+  experience: { title: string; company: string; dates: string; bullets: string[] }[];
+  education: { line: string; details?: string | null }[];
+  certifications: string[];
+}
+
+export async function renderDocx(cv: TailoredCvDoc): Promise<Buffer> {
+  const children: Paragraph[] = [];
+
+  if (cv.name) {
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        spacing: { after: 80 },
+        children: [new TextRun({ text: cv.name, bold: true, size: 32, font: "Calibri" })],
+      })
+    );
+  }
+
+  children.push(
+    new Paragraph({
+      spacing: { after: 200 },
+      children: [new TextRun({ text: cv.headline, italics: true, size: 22, font: "Calibri" })],
+    })
+  );
+
+  const section = (title: string) =>
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 240, after: 120 },
+      children: [new TextRun({ text: title, bold: true, size: 24, font: "Calibri" })],
+    });
+
+  children.push(section("Summary"));
+  children.push(
+    new Paragraph({
+      spacing: { after: 120 },
+      children: [new TextRun({ text: cv.summary, size: 20, font: "Calibri" })],
+    })
+  );
+
+  children.push(section("Skills"));
+  children.push(
+    new Paragraph({
+      spacing: { after: 120 },
+      children: [new TextRun({ text: cv.skills.join(", "), size: 20, font: "Calibri" })],
+    })
+  );
+
+  children.push(section("Experience"));
+  for (const exp of cv.experience) {
+    children.push(
+      new Paragraph({
+        spacing: { before: 120, after: 40 },
+        children: [
+          new TextRun({ text: `${exp.title} — ${exp.company}`, bold: true, size: 20, font: "Calibri" }),
+        ],
+      })
+    );
+    children.push(
+      new Paragraph({
+        spacing: { after: 60 },
+        children: [new TextRun({ text: exp.dates, size: 18, font: "Calibri", color: "444444" })],
+      })
+    );
+    for (const bullet of exp.bullets) {
+      children.push(
+        new Paragraph({
+          spacing: { after: 40 },
+          indent: { left: 360 },
+          children: [new TextRun({ text: `• ${bullet}`, size: 20, font: "Calibri" })],
+        })
+      );
+    }
+  }
+
+  if (cv.education.length) {
+    children.push(section("Education"));
+    for (const edu of cv.education) {
+      children.push(
+        new Paragraph({
+          spacing: { after: 40 },
+          children: [new TextRun({ text: edu.line, size: 20, font: "Calibri" })],
+        })
+      );
+      if (edu.details) {
+        children.push(
+          new Paragraph({
+            spacing: { after: 80 },
+            children: [new TextRun({ text: edu.details, size: 18, font: "Calibri", color: "444444" })],
+          })
+        );
+      }
+    }
+  }
+
+  if (cv.certifications.length) {
+    children.push(section("Certifications"));
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: cv.certifications.join("; "), size: 20, font: "Calibri" })],
+      })
+    );
+  }
+
+  const doc = new Document({
+    sections: [{ properties: {}, children }],
+  });
+
+  return Packer.toBuffer(doc);
+}
+
+export async function renderPdf(cv: TailoredCvDoc): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 54, size: "LETTER" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    doc.font("Helvetica-Bold").fontSize(16);
+    if (cv.name) doc.text(cv.name);
+    doc.font("Helvetica-Oblique").fontSize(11).fillColor("#333333").text(cv.headline);
+    doc.moveDown(0.8).fillColor("#000000");
+
+    const heading = (t: string) => {
+      doc.moveDown(0.4);
+      doc.font("Helvetica-Bold").fontSize(12).text(t);
+      doc.moveDown(0.2);
+      doc.font("Helvetica").fontSize(10);
+    };
+
+    heading("Summary");
+    doc.text(cv.summary);
+
+    heading("Skills");
+    doc.text(cv.skills.join(", "));
+
+    heading("Experience");
+    for (const exp of cv.experience) {
+      doc.font("Helvetica-Bold").text(`${exp.title} — ${exp.company}`);
+      doc.font("Helvetica").fillColor("#444444").text(exp.dates);
+      doc.fillColor("#000000");
+      for (const bullet of exp.bullets) {
+        doc.text(`• ${bullet}`, { indent: 12 });
+      }
+      doc.moveDown(0.3);
+    }
+
+    if (cv.education.length) {
+      heading("Education");
+      for (const edu of cv.education) {
+        doc.text(edu.line);
+        if (edu.details) doc.fillColor("#444444").text(edu.details).fillColor("#000000");
+      }
+    }
+
+    if (cv.certifications.length) {
+      heading("Certifications");
+      doc.text(cv.certifications.join("; "));
+    }
+
+    doc.end();
+  });
+}

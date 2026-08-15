@@ -1,0 +1,30 @@
+Alex Rivera
+Senior Full-Stack Engineer
+alex.rivera@email.com | github.com/alexrivera
+
+SUMMARY
+Software engineer with 8 years building web and desktop products. Strong in React, TypeScript, Node.js, and system design. Led small teams and delivered features from prototype to production.
+
+EXPERIENCE
+
+Senior Software Engineer — Northwind Labs (2021–Present)
+- Led a team of 4 engineers delivering a React + Node customer portal used by 12k monthly users
+- Designed REST APIs and PostgreSQL schemas; improved p95 latency by 35%
+- Introduced CI/CD with GitHub Actions and containerized deploys on AWS ECS
+- Mentored juniors; ran design reviews and hiring loops
+
+Software Engineer — Contoso Systems (2018–2021)
+- Built responsive SPAs in React and Vue
+- Implemented authentication (OAuth2) and role-based access control
+- Wrote automated tests with Jest and Playwright
+
+EDUCATION
+B.S. Computer Science — State University (2018)
+
+CERTIFICATIONS
+AWS Certified Developer – Associate (2023)
+
+SKILLS
+Technical: TypeScript, JavaScript, React, Node.js, Express, PostgreSQL, SQLite, Docker, AWS, Git
+Soft: Team leadership, stakeholder communication, mentoring
+Tools: GitHub Actions, Figma, Jira

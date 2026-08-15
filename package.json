@@ -1,0 +1,23 @@
+{
+  "name": "careerfit",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c teal,cyan \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w web && npm run build -w server",
+    "start": "npm run start -w server",
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "icons": "node scripts/gen-icons.mjs",
+    "smoke": "npx tsx scripts/smoke.mts",
+    "test:auth": "node scripts/test-auth.mjs",
+    "test:downloads": "node scripts/test-downloads.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

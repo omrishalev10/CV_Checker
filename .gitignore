@@ -1,0 +1,14 @@
+node_modules/
+dist/
+data/
+tmp-*/
+uploads/
+.env
+*.local
+.DS_Store
+src-tauri/target/
+web/dev-dist/
+*.log
+.vite/
+coverage/
+*.tsbuildinfo

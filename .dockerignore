@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+data
+tmp-*
+src-tauri
+web/dev-dist
+web/dist
+server/dist
+.git
+.github
+.env
+.env.*
+!.env.example
+*.log
+coverage
+.vite
+fixtures

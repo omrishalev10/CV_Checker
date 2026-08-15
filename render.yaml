@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: careerfit
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      # Set these in the Render dashboard; sync:false keeps secrets out of git.
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
