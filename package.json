@@ -15,7 +15,8 @@
     "icons": "node scripts/gen-icons.mjs",
     "smoke": "npx tsx scripts/smoke.mts",
     "test:auth": "node scripts/test-auth.mjs",
-    "test:downloads": "node scripts/test-downloads.mjs"
+    "test:downloads": "node scripts/test-downloads.mjs",
+    "test:github": "npx tsx scripts/test-github-parse.mts"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

@@ -116,7 +116,7 @@ export default function ProfilePage() {
         <p className="lede">
           {exists
             ? `Version ${version} · source of truth for matching and tailored CVs.`
-            : "Upload or paste a CV to build your structured skill profile."}
+            : "Upload or paste a CV to build your structured skill profile. Add a GitHub URL under links so tailored CVs can pull matching public repos."}
         </p>
       </div>
 

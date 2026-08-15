@@ -20,6 +20,7 @@ import {
   mergeProfileUpdate,
   resetAiClient,
 } from "../services/ai.js";
+import { fetchGithubEvidence } from "../services/github.js";
 import { fetchJobUrl } from "../services/urlFetch.js";
 import { renderDocx, renderPdf, type TailoredCvDoc } from "../services/tailorExport.js";
 import type { SkillProfile } from "../types.js";
@@ -392,6 +393,7 @@ export function createApiRouter(): Router {
           cv: generated.cv,
           jobText,
           baselineScore: Number(analysis.score) || 0,
+          github: generated.github,
         });
         saved = await saveTailoredCv({
           analysisId: id,
@@ -438,11 +440,13 @@ export function createApiRouter(): Router {
         return;
       }
       const analysis = JSON.parse(row.analysis_json);
+      const github = await fetchGithubEvidence(current.profile);
       const grade = await gradeTailoredCv({
         profile: current.profile,
         cv: JSON.parse(tailored.cv_json),
         jobText: row.raw_input || analysis.extractedText || "",
         baselineScore: Number(analysis.score) || 0,
+        github,
       });
       await saveTailoredCv({
         analysisId: id,

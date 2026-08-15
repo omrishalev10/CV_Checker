@@ -9,6 +9,7 @@ import type {
 } from "../types.js";
 import { scoreToLabel } from "../types.js";
 import { getModel, getProvider, resolveApiKey } from "../settings.js";
+import { fetchGithubEvidence, type GithubEvidence } from "./github.js";
 
 let geminiClient: GoogleGenAI | null = null;
 let geminiKey: string | null = null;
@@ -177,9 +178,10 @@ Return JSON matching:
   "totalYearsExperience": number|null,
   "targetRoles": [],
   "learningNow": [],
-  "links": [],
+  "links": [{"label": string, "url": string}],
   "notes": []
 }
+Put GitHub, LinkedIn, portfolio, and similar URLs into links when they appear in the CV.
 Infer skill levels conservatively from evidence. Never invent employers, degrees, or certifications not in the text.`,
     `Extract a Skill Profile from this CV:\n\n${cvText.slice(0, 100000)}`
   );
@@ -293,6 +295,7 @@ export async function gradeTailoredCv(input: {
   cv: unknown;
   jobText: string;
   baselineScore: number;
+  github?: GithubEvidence;
 }): Promise<TailoredCvGrade> {
   const result = await completeJson<Omit<TailoredCvGrade, "label" | "delta">>(
     `You grade a tailored CV against a specific job description, and audit it for honesty.
@@ -300,11 +303,14 @@ export async function gradeTailoredCv(input: {
 Score 0-100 how well this CV presents the candidate for THIS job, judging:
 - coverage of the job's hard requirements and keywords a recruiter/ATS would scan for
 - whether the most relevant experience appears early and prominently
+- whether real strengths were expanded (more concrete bullets, relevant projects) rather than the CV being shrunk to hide gaps
 - clarity and ATS-parseability of the structure
 
-Do NOT reward the CV for claims the Skill Profile does not support. Any claim in the CV that is
-not supported by the Skill Profile is a serious defect: list it in unsupportedClaims and lower the score.
+Sources of truth: the Skill Profile AND the GitHub evidence payload (public repos actually fetched).
+A project on the CV is allowed if it matches a repo in the GitHub evidence. Do NOT treat those as invented.
+Any other claim not supported by the Skill Profile or GitHub evidence is a serious defect: list it in unsupportedClaims and lower the score.
 Genuine gaps that remain unaddressed are expected and should be reported, not penalized as dishonesty.
+Do NOT lower the score for keeping unrelated-but-real experience on the CV — omitting real history is not an improvement.
 
 Return JSON:
 {
@@ -318,7 +324,7 @@ Return JSON:
 explanation: 1-3 sentences, direct, no cheerleading.
 keywordsMissing: job keywords absent from the CV because the candidate genuinely lacks them.
 atsIssues: structural problems an ATS parser could trip on (empty array if none).`,
-    `Skill Profile (source of truth):\n${JSON.stringify(input.profile, null, 2)}\n\nTailored CV:\n${JSON.stringify(input.cv, null, 2)}\n\nJob description:\n${input.jobText.slice(0, 60000)}`,
+    `Skill Profile:\n${JSON.stringify(input.profile, null, 2)}\n\nGitHub evidence:\n${JSON.stringify(input.github ?? { note: "not fetched" }, null, 2)}\n\nTailored CV:\n${JSON.stringify(input.cv, null, 2)}\n\nJob description:\n${input.jobText.slice(0, 60000)}`,
     { temperature: 0 }
   );
 
@@ -353,19 +359,63 @@ export async function generateTailoredCvContent(
       dates: string;
       bullets: string[];
     }[];
+    projects: {
+      name: string;
+      url?: string | null;
+      stack?: string[];
+      bullets: string[];
+    }[];
     education: { line: string; details?: string }[];
     certifications: string[];
   };
   diff: TailorDiff;
+  github: GithubEvidence;
 }> {
-  return completeJson(
+  const github = await fetchGithubEvidence(profile);
+
+  const generated = await completeJson<{
+    cv: {
+      name?: string;
+      headline: string;
+      summary: string;
+      skills: string[];
+      experience: {
+        title: string;
+        company: string;
+        dates: string;
+        bullets: string[];
+      }[];
+      projects?: {
+        name: string;
+        url?: string | null;
+        stack?: string[];
+        bullets: string[];
+      }[];
+      education: { line: string; details?: string }[];
+      certifications: string[];
+    };
+    diff: TailorDiff;
+  }>(
     `You generate an ATS-optimized tailored CV from a real Skill Profile for a specific job.
 
 HARD RULES:
-- NEVER invent experience, skills, employers, degrees, or certifications not present in the Skill Profile.
+- NEVER invent experience, skills, employers, degrees, certifications, or projects.
 - You may reorder, re-emphasize, reword, and mirror job-description terminology ONLY when the candidate genuinely has the equivalent skill/experience.
 - Prefer single-column, plain sections suitable for ATS parsers.
 - Keyword skills list may only include skills the candidate actually has.
+
+EXPAND, DO NOT SHRINK:
+- Keep EVERY employment role from the Skill Profile. Do not drop older or less-related jobs to make gaps look smaller.
+- When the job has requirements the candidate lacks, compensate by going DEEPER on adjacent strengths: more concrete bullets, impact, scale, tools they actually used, and projects that demonstrate transfer.
+- Put the most job-relevant roles and bullets first, then the rest of the real history.
+- Summary should sell what they DO have for this role. Do not write a summary that mainly apologizes for gaps.
+- Skills: include the candidate's real skills; lead with those that map to the job. Do not strip unrelated real skills.
+
+PROJECTS:
+- You MAY add a Projects section using GitHub evidence and any projects already in the Skill Profile (notes, experience, links).
+- Only include GitHub repos that actually appear in the GitHub evidence payload.
+- Prefer repos whose name, description, language, or topics overlap the job. 2–5 is enough; skip empty or unrelated repos.
+- Project bullets must be grounded in the repo description/topics/language — no invented production claims.
 
 Return JSON:
 {
@@ -375,6 +425,7 @@ Return JSON:
     "summary": string,
     "skills": string[],
     "experience": [{"title": string, "company": string, "dates": string, "bullets": string[]}],
+    "projects": [{"name": string, "url": string|null, "stack": string[], "bullets": string[]}],
     "education": [{"line": string, "details": string|null}],
     "certifications": string[]
   },
@@ -384,8 +435,21 @@ Return JSON:
     "warning": string|null
   }
 }
-In diff.notAdded, list job requirements you deliberately did NOT claim because they are absent from the profile.
-If fit is low, set warning explaining gaps remain and were not fabricated.`,
-    `Skill Profile:\n${JSON.stringify(profile, null, 2)}\n\nMatch analysis:\n${JSON.stringify(analysis, null, 2)}\n\nJob text:\n${jobText.slice(0, 60000)}`
+In diff.changes, mention expansions (stronger bullets, reordering, which GitHub projects were added).
+In diff.notAdded, list job requirements you deliberately did NOT claim because they are absent from the profile and GitHub evidence.
+If fit is low, set warning explaining gaps remain and were not fabricated — the CV was expanded on real strengths instead.`,
+    `Skill Profile:\n${JSON.stringify(profile, null, 2)}\n\nMatch analysis:\n${JSON.stringify(analysis, null, 2)}\n\nGitHub evidence:\n${JSON.stringify(github, null, 2)}\n\nJob text:\n${jobText.slice(0, 60000)}`
   );
+
+  const projects = Array.isArray(generated.cv.projects) ? generated.cv.projects : [];
+  const changes = [...(generated.diff.changes || [])];
+  if (github.note && !changes.some((c) => c.toLowerCase().includes("github"))) {
+    changes.push(github.note);
+  }
+
+  return {
+    cv: { ...generated.cv, projects },
+    diff: { ...generated.diff, changes },
+    github,
+  };
 }

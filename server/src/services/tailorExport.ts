@@ -14,6 +14,7 @@ export interface TailoredCvDoc {
   summary: string;
   skills: string[];
   experience: { title: string; company: string; dates: string; bullets: string[] }[];
+  projects?: { name: string; url?: string | null; stack?: string[]; bullets: string[] }[];
   education: { line: string; details?: string | null }[];
   certifications: string[];
 }
@@ -88,6 +89,43 @@ export async function renderDocx(cv: TailoredCvDoc): Promise<Buffer> {
     }
   }
 
+  if (cv.projects?.length) {
+    children.push(section("Projects"));
+    for (const project of cv.projects) {
+      const title = project.url ? `${project.name} — ${project.url}` : project.name;
+      children.push(
+        new Paragraph({
+          spacing: { before: 120, after: 40 },
+          children: [new TextRun({ text: title, bold: true, size: 20, font: "Calibri" })],
+        })
+      );
+      if (project.stack?.length) {
+        children.push(
+          new Paragraph({
+            spacing: { after: 40 },
+            children: [
+              new TextRun({
+                text: project.stack.join(", "),
+                size: 18,
+                font: "Calibri",
+                color: "444444",
+              }),
+            ],
+          })
+        );
+      }
+      for (const bullet of project.bullets || []) {
+        children.push(
+          new Paragraph({
+            spacing: { after: 40 },
+            indent: { left: 360 },
+            children: [new TextRun({ text: `• ${bullet}`, size: 20, font: "Calibri" })],
+          })
+        );
+      }
+    }
+  }
+
   if (cv.education.length) {
     children.push(section("Education"));
     for (const edu of cv.education) {
@@ -159,6 +197,22 @@ export async function renderPdf(cv: TailoredCvDoc): Promise<Buffer> {
         doc.text(`• ${bullet}`, { indent: 12 });
       }
       doc.moveDown(0.3);
+    }
+
+    if (cv.projects?.length) {
+      heading("Projects");
+      for (const project of cv.projects) {
+        const title = project.url ? `${project.name} — ${project.url}` : project.name;
+        doc.font("Helvetica-Bold").text(title);
+        if (project.stack?.length) {
+          doc.font("Helvetica").fillColor("#444444").text(project.stack.join(", ")).fillColor("#000000");
+        }
+        doc.font("Helvetica");
+        for (const bullet of project.bullets || []) {
+          doc.text(`• ${bullet}`, { indent: 12 });
+        }
+        doc.moveDown(0.3);
+      }
     }
 
     if (cv.education.length) {

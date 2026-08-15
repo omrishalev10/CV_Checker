@@ -154,7 +154,7 @@ export default function MatchDetailPage() {
       {busy && (
         <div className="loading-banner">
           <span className="spinner" />
-          Generating and grading tailored CV…
+          Generating and grading tailored CV… (includes a public GitHub lookup if your profile has a GitHub link)
         </div>
       )}
 
@@ -193,7 +193,8 @@ export default function MatchDetailPage() {
       <div className="panel stack">
         <h2>Tailored CV</h2>
         <p className="muted">
-          Reorders and rewords only what's already in your profile. Never invents skills or experience.
+          Reorders, expands real strengths, and can add matching public GitHub projects.
+          Gaps stay honest — missing requirements are not invented, and real jobs are not dropped to hide them.
         </p>
         <div className="row">
           <button className="btn btn-primary" onClick={onTailor} disabled={busy}>

@@ -28,6 +28,14 @@ const sample: TailoredCvDoc = {
   ],
   education: [{ line: "B.S. Computer Science — State University (2018)" }],
   certifications: ["AWS Certified Developer – Associate (2023)"],
+  projects: [
+    {
+      name: "portal",
+      url: "https://github.com/alexrivera/portal",
+      stack: ["TypeScript", "React"],
+      bullets: ["Customer portal used in production"],
+    },
+  ],
 };
 
 const docx = await renderDocx(sample);

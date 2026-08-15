@@ -12,7 +12,7 @@ Personal job-match assistant: ingest your CV into a structured skill profile, sc
 | Storage | libSQL — local file or Turso | Profile versions, match history, tailored CV content |
 | Desktop | Tauri (wraps same web build) | Native PC shell; packaging only |
 
-**Stateless by design.** Nothing is written to disk at runtime. Tailored CVs are stored as JSON and the DOCX/PDF are rendered on each download, so the app deploys to hosts that offer no persistent volume. Point `TURSO_DATABASE_URL` at Turso and the same code runs in the cloud; leave it unset and it uses a local SQLite file.
+**Tailored CVs expand rather than shrink.** Missing job requirements are left off (never invented). Real roles stay on the page; relevant bullets and public GitHub projects are emphasized instead. Add a `github.com/you` link on the profile so repos can be considered. Optional `GITHUB_TOKEN` raises GitHub's rate limit.
 
 **Fit score:** 0–100 with labels — Low (&lt;40), Medium (40–64), High (65–84), Strong (≥85).
 
@@ -132,7 +132,7 @@ The desktop shell loads the web UI and talks to the local API (`http://localhost
 3. Paste a job description → score + gaps  
 4. Upload a job screenshot → vision extract + match  
 5. Paste a job URL (and a failing URL) → fetch or clear fallback  
-6. Generate tailored CV → DOCX/PDF + honest diff  
+6. Generate tailored CV → DOCX/PDF + honest diff; GitHub projects appear if a github.com link is on the profile  
 7. Check layout at ~375px width  
 8. Set an app password → reload → lock screen appears; `npm run test:auth` passes  
 9. Download a tailored CV twice → both render fresh; `npm run test:downloads` passes  
@@ -144,7 +144,7 @@ The desktop shell loads the web UI and talks to the local API (`http://localhost
 - `npm start` — serve API + static web from `web/dist`  
 - `npm run icons` — regenerate PWA and Tauri icons
 - `npm run test:auth` — end-to-end password gate checks
-- `npm run test:downloads` — proves DOCX/PDF render on request with no files on disk
+- `npm run test:github` — GitHub username parsing from profile links
 - `node scripts/check-db-compat.mjs` — confirms an existing local database opens under libSQL
 - `node scripts/migrate-to-turso.mjs` — copy local data into Turso before deploying
 
