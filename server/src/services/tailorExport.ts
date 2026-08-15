@@ -1,6 +1,7 @@
 import {
   AlignmentType,
   Document,
+  ExternalHyperlink,
   HeadingLevel,
   Packer,
   Paragraph,
@@ -11,6 +12,7 @@ import PDFDocument from "pdfkit";
 export interface TailoredCvDoc {
   name?: string | null;
   headline: string;
+  links?: { label: string; url: string }[];
   summary: string;
   skills: string[];
   experience: { title: string; company: string; dates: string; bullets: string[] }[];
@@ -34,10 +36,37 @@ export async function renderDocx(cv: TailoredCvDoc): Promise<Buffer> {
 
   children.push(
     new Paragraph({
-      spacing: { after: 200 },
+      spacing: { after: cv.links?.length ? 80 : 200 },
       children: [new TextRun({ text: cv.headline, italics: true, size: 22, font: "Calibri" })],
     })
   );
+
+  if (cv.links?.length) {
+    for (const [i, link] of cv.links.entries()) {
+      const last = i === cv.links.length - 1;
+      children.push(
+        new Paragraph({
+          spacing: { after: last ? 200 : 40 },
+          children: [
+            new TextRun({ text: `${link.label}: `, size: 20, font: "Calibri" }),
+            new ExternalHyperlink({
+              link: link.url,
+              children: [
+                new TextRun({
+                  text: link.url,
+                  style: "Hyperlink",
+                  size: 20,
+                  font: "Calibri",
+                  color: "0563C1",
+                  underline: {},
+                }),
+              ],
+            }),
+          ],
+        })
+      );
+    }
+  }
 
   const section = (title: string) =>
     new Paragraph({
@@ -173,6 +202,15 @@ export async function renderPdf(cv: TailoredCvDoc): Promise<Buffer> {
     doc.font("Helvetica-Bold").fontSize(16);
     if (cv.name) doc.text(cv.name);
     doc.font("Helvetica-Oblique").fontSize(11).fillColor("#333333").text(cv.headline);
+    if (cv.links?.length) {
+      doc.moveDown(0.25);
+      doc.font("Helvetica").fontSize(10);
+      for (const link of cv.links) {
+        doc.fillColor("#000000").text(`${link.label}: `, { continued: true });
+        doc.fillColor("#0563C1").text(link.url, { link: link.url, underline: true });
+      }
+      doc.fillColor("#000000");
+    }
     doc.moveDown(0.8).fillColor("#000000");
 
     const heading = (t: string) => {

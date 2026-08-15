@@ -16,6 +16,7 @@ console.log("bad url ok?", bad.ok, "message:", bad.ok ? "" : bad.error.slice(0, 
 const sample: TailoredCvDoc = {
   name: "Alex Rivera",
   headline: "Senior Full-Stack Engineer",
+  links: [{ label: "GitHub", url: "https://github.com/alexrivera" }],
   summary: "Experienced engineer focused on React and Node.",
   skills: ["TypeScript", "React", "Node.js"],
   experience: [

@@ -89,6 +89,24 @@ export function githubUrlFromProfile(profile: SkillProfile): string {
   return username ? `https://github.com/${username}` : "";
 }
 
+/** Canonical profile page, never a repo URL. */
+export function githubProfileUrl(profile: SkillProfile): string {
+  const username = githubUsernameFromProfile(profile);
+  return username ? `https://github.com/${username}` : "";
+}
+
+export function withGithubLink<T extends object>(
+  cv: T,
+  profile: SkillProfile
+): T & { links: { label: string; url: string }[] } {
+  const url = githubProfileUrl(profile);
+  const links = [...((cv as { links?: { label: string; url: string }[] }).links || [])];
+  if (!url) return { ...cv, links };
+  const already = links.some((link) => (link.url || "").replace(/\/+$/, "").toLowerCase() === url.toLowerCase());
+  if (already) return { ...cv, links };
+  return { ...cv, links: [{ label: "GitHub", url }, ...links] };
+}
+
 /** Upsert or remove the GitHub link without touching other profile links. */
 export function withGithubUrl(profile: SkillProfile, url: string): SkillProfile {
   const trimmed = url.trim();

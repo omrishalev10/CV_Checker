@@ -24,7 +24,7 @@ import {
   mergeProfileUpdate,
   resetAiClient,
 } from "../services/ai.js";
-import { fetchGithubEvidence, githubUrlFromProfile, withGithubUrl } from "../services/github.js";
+import { fetchGithubEvidence, githubUrlFromProfile, withGithubLink, withGithubUrl } from "../services/github.js";
 import { fetchJobUrl } from "../services/urlFetch.js";
 import { renderDocx, renderPdf, type TailoredCvDoc } from "../services/tailorExport.js";
 import type { SkillProfile } from "../types.js";
@@ -593,7 +593,7 @@ export function createApiRouter(): Router {
         return;
       }
 
-      const cv = JSON.parse(tailored.cv_json) as TailoredCvDoc;
+      const cv = withGithubLink(JSON.parse(tailored.cv_json) as TailoredCvDoc, (await getProfile())?.profile ?? emptyProfile());
       const buffer = wantsPdf ? await renderPdf(cv) : await renderDocx(cv);
       res.setHeader("Cache-Control", "no-store");
       res.setHeader(

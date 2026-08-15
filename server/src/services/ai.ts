@@ -9,7 +9,7 @@ import type {
 } from "../types.js";
 import { scoreToLabel } from "../types.js";
 import { getModel, getProvider, resolveApiKey } from "../settings.js";
-import { fetchGithubEvidence, type GithubEvidence } from "./github.js";
+import { fetchGithubEvidence, type GithubEvidence, withGithubLink } from "./github.js";
 import {
   humanizeAiError,
   isModelMissingError,
@@ -381,6 +381,7 @@ export async function generateTailoredCvContent(
   cv: {
     name?: string;
     headline: string;
+    links?: { label: string; url: string }[];
     summary: string;
     skills: string[];
     experience: {
@@ -433,6 +434,7 @@ HARD RULES:
 - You may reorder, re-emphasize, reword, and mirror job-description terminology ONLY when the candidate genuinely has the equivalent skill/experience.
 - Prefer single-column, plain sections suitable for ATS parsers.
 - Keyword skills list may only include skills the candidate actually has.
+- ALWAYS put the candidate's GitHub profile URL in cv.links (https://github.com/<username> from the Skill Profile / GitHub evidence). Do not omit it. Other real profile links (LinkedIn, portfolio) may be included too.
 
 EXPAND, DO NOT SHRINK:
 - Keep EVERY employment role from the Skill Profile. Do not drop older or less-related jobs to make gaps look smaller.
@@ -452,6 +454,7 @@ Return JSON:
   "cv": {
     "name": string|null,
     "headline": string,
+    "links": [{"label": string, "url": string}],
     "summary": string,
     "skills": string[],
     "experience": [{"title": string, "company": string, "dates": string, "bullets": string[]}],
@@ -473,12 +476,18 @@ If fit is low, set warning explaining gaps remain and were not fabricated — th
 
   const projects = Array.isArray(generated.cv.projects) ? generated.cv.projects : [];
   const changes = [...(generated.diff.changes || [])];
-  if (github.note && !changes.some((c) => c.toLowerCase().includes("github"))) {
+  const cv = withGithubLink({ ...generated.cv, projects }, profile);
+  if (cv.links?.some((l) => /github\.com/i.test(l.url))) {
+    if (!changes.some((c) => c.toLowerCase().includes("github profile"))) {
+      changes.push("Included GitHub profile link in the header.");
+    }
+  }
+  if (github.note && !changes.includes(github.note)) {
     changes.push(github.note);
   }
 
   return {
-    cv: { ...generated.cv, projects },
+    cv,
     diff: { ...generated.diff, changes },
     github,
   };

@@ -2,7 +2,9 @@ import {
   parseGithubUsername,
   githubUsernameFromProfile,
   githubUrlFromProfile,
+  githubProfileUrl,
   withGithubUrl,
+  withGithubLink,
 } from "../server/src/services/github.ts";
 import type { SkillProfile } from "../server/src/types.ts";
 
@@ -51,6 +53,28 @@ check(
   }),
   null
 );
+
+check(
+  "profile url ignores repo path",
+  githubProfileUrl({
+    ...empty,
+    links: [{ label: "GitHub", url: "https://github.com/omrishalev10/CV_Checker" }],
+  }),
+  "https://github.com/omrishalev10"
+);
+
+const stamped = withGithubLink(
+  { headline: "Engineer", links: [{ label: "LinkedIn", url: "https://linkedin.com/in/x" }] },
+  { ...empty, links: [{ label: "GitHub", url: "https://github.com/omrishalev10" }] }
+);
+check("stamps github first", stamped.links[0].url, "https://github.com/omrishalev10");
+check("keeps other links", stamped.links[1].url, "https://linkedin.com/in/x");
+
+const twice = withGithubLink(stamped, {
+  ...empty,
+  links: [{ label: "GitHub", url: "https://github.com/omrishalev10" }],
+});
+check("does not duplicate", twice.links.length, 2);
 
 console.log(failures === 0 ? "\nAll GitHub parse checks passed." : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
