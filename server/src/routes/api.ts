@@ -155,6 +155,7 @@ export function createApiRouter(): Router {
       }
       res.setHeader("Content-Type", file.mime || "application/octet-stream");
       res.setHeader("Content-Disposition", `attachment; filename="${file.filename.replace(/"/g, "")}"`);
+      res.setHeader("Cache-Control", "no-store");
       res.send(Buffer.from(file.content));
     } catch (err) {
       next(err);
@@ -594,6 +595,7 @@ export function createApiRouter(): Router {
 
       const cv = JSON.parse(tailored.cv_json) as TailoredCvDoc;
       const buffer = wantsPdf ? await renderPdf(cv) : await renderDocx(cv);
+      res.setHeader("Cache-Control", "no-store");
       res.setHeader(
         "Content-Type",
         wantsPdf

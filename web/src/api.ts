@@ -134,13 +134,35 @@ function humanizeClientError(raw: unknown, status: number): string {
   return text;
 }
 
-async function parseJson(res: Response) {
+async function throwIfNotOk(res: Response): Promise<void> {
+  if (res.ok) return;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    if (res.status === 401 && data.authRequired) authRequiredHandler?.();
-    throw new Error(humanizeClientError(data.error ?? data, res.status));
-  }
-  return data;
+  if (res.status === 401 && data.authRequired) authRequiredHandler?.();
+  throw new Error(humanizeClientError(data.error ?? data, res.status));
+}
+
+async function parseJson(res: Response) {
+  await throwIfNotOk(res);
+  return res.json();
+}
+
+function filenameFromDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const star = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star?.[1]) return decodeURIComponent(star[1]);
+  const quoted = header.match(/filename="([^"]+)"/i);
+  if (quoted?.[1]) return quoted[1];
+  const plain = header.match(/filename=([^;]+)/i);
+  return plain?.[1]?.trim() || null;
+}
+
+export async function fetchDownload(url: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(url, { credentials: "same-origin" });
+  await throwIfNotOk(res);
+  return {
+    blob: await res.blob(),
+    filename: filenameFromDisposition(res.headers.get("content-disposition")),
+  };
 }
 
 export const api = {

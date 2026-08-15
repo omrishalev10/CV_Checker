@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, MatchAnalysis, TailorDiff, TailoredCvGrade } from "../api";
+import { downloadFromApi } from "../download";
 
 export default function MatchDetailPage() {
   const { id } = useParams();
@@ -21,6 +22,7 @@ export default function MatchDetailPage() {
     hasPdf: boolean;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
@@ -77,6 +79,21 @@ export default function MatchDetailPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed");
       setBusy(false);
+    }
+  }
+
+  async function onDownload(format: "docx" | "pdf") {
+    setDownloading(format);
+    setError(null);
+    try {
+      await downloadFromApi(
+        `/api/matches/${matchId}/cv/${format}`,
+        `CareerFit-tailored-${matchId}.${format}`
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setDownloading(null);
     }
   }
 
@@ -201,14 +218,24 @@ export default function MatchDetailPage() {
             {tailored ? "Regenerate tailored CV" : "Generate tailored CV"}
           </button>
           {tailored?.hasDocx && (
-            <a className="btn btn-ghost" href={`/api/matches/${matchId}/cv/docx`}>
-              Download DOCX
-            </a>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => onDownload("docx")}
+              disabled={busy || Boolean(downloading)}
+            >
+              {downloading === "docx" ? "Preparing DOCX…" : "Download DOCX"}
+            </button>
           )}
           {tailored?.hasPdf && (
-            <a className="btn btn-ghost" href={`/api/matches/${matchId}/cv/pdf`}>
-              Download PDF
-            </a>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => onDownload("pdf")}
+              disabled={busy || Boolean(downloading)}
+            >
+              {downloading === "pdf" ? "Preparing PDF…" : "Download PDF"}
+            </button>
           )}
           {tailored && !tailored.grade && (
             <button className="btn btn-ghost" onClick={onGrade} disabled={busy}>

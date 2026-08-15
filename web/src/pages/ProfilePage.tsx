@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, ProfileDiff, Skill, SkillProfile } from "../api";
+import { downloadFromApi } from "../download";
 
 function githubUrlFromProfile(profile: SkillProfile | null): string {
   if (!profile?.links) return "";
@@ -265,9 +266,18 @@ export default function ProfilePage() {
                   </span>
                 </label>
                 <div className="row">
-                  <a className="btn btn-ghost" href={`/api/profile/files/${f.id}`}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() =>
+                      downloadFromApi(`/api/profile/files/${f.id}`, f.filename).catch((e) =>
+                        setError(e instanceof Error ? e.message : "Download failed")
+                      )
+                    }
+                    disabled={busy}
+                  >
                     Download
-                  </a>
+                  </button>
                   <button
                     type="button"
                     className="btn btn-danger"

@@ -8,6 +8,10 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
+      workbox: {
+        navigateFallback: "index.html",
+        navigateFallbackDenylist: [/^\/api\//],
+      },
       manifest: {
         name: "CareerFit",
         short_name: "CareerFit",
