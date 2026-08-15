@@ -16,6 +16,22 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+interface SkillDraft extends Skill {
+  uid: string;
+}
+
+function newSkillUid(): string {
+  return crypto.randomUUID();
+}
+
+function toDrafts(skills: Skill[]): SkillDraft[] {
+  return skills.map((skill) => ({ ...skill, uid: newSkillUid() }));
+}
+
+function fromDrafts(skills: SkillDraft[]): Skill[] {
+  return skills.map(({ uid: _uid, ...skill }) => skill);
+}
+
 interface ProfileFile {
   id: number;
   filename: string;
@@ -30,7 +46,7 @@ export default function ProfilePage() {
   const [exists, setExists] = useState(false);
   const [github, setGithub] = useState("");
   const [summary, setSummary] = useState("");
-  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skills, setSkills] = useState<SkillDraft[]>([]);
   const [files, setFiles] = useState<ProfileFile[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [showEdit, setShowEdit] = useState(false);
@@ -53,7 +69,7 @@ export default function ProfilePage() {
     setExists(Boolean(data.exists));
     setGithub(githubUrlFromProfile(data.profile));
     setSummary(data.profile?.summary || "");
-    setSkills(data.profile?.skills || []);
+    setSkills(toDrafts(data.profile?.skills || []));
     setEditJson(JSON.stringify(data.profile, null, 2));
     const listed = await api.listFiles();
     setFiles(listed.files || []);
@@ -99,7 +115,7 @@ export default function ProfilePage() {
     e.preventDefault();
     if (!profile) return;
     await run(async () => {
-      await api.saveProfile({ ...profile, skills: skills.filter((s) => s.name.trim()) });
+      await api.saveProfile({ ...profile, skills: fromDrafts(skills).filter((s) => s.name.trim()) });
       await refresh();
       setOk("Skills saved.");
     });
@@ -324,23 +340,27 @@ export default function ProfilePage() {
           <p className="muted">No skills yet — update the profile from a file or add one below.</p>
         ) : (
           <div className="stack">
-            {skills.map((skill, i) => (
-              <div className="skill-row" key={`${skill.name}-${i}`}>
+            {skills.map((skill) => (
+              <div className="skill-row" key={skill.uid}>
                 <input
                   type="text"
+                  enterKeyHint="done"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   value={skill.name}
-                  onChange={(e) =>
-                    setSkills((prev) => prev.map((s, idx) => (idx === i ? { ...s, name: e.target.value } : s)))
-                  }
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    setSkills((prev) => prev.map((s) => (s.uid === skill.uid ? { ...s, name } : s)));
+                  }}
                   disabled={busy}
                 />
                 <select
                   value={skill.level}
-                  onChange={(e) =>
-                    setSkills((prev) =>
-                      prev.map((s, idx) => (idx === i ? { ...s, level: e.target.value as Skill["level"] } : s))
-                    )
-                  }
+                  onChange={(e) => {
+                    const level = e.target.value as Skill["level"];
+                    setSkills((prev) => prev.map((s) => (s.uid === skill.uid ? { ...s, level } : s)));
+                  }}
                   disabled={busy}
                 >
                   <option value="beginner">Beginner</option>
@@ -351,7 +371,7 @@ export default function ProfilePage() {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => setSkills((prev) => prev.filter((_, idx) => idx !== i))}
+                  onClick={() => setSkills((prev) => prev.filter((s) => s.uid !== skill.uid))}
                   disabled={busy}
                 >
                   Remove
@@ -364,7 +384,10 @@ export default function ProfilePage() {
           type="button"
           className="btn btn-ghost"
           onClick={() =>
-            setSkills((prev) => [...prev, { name: "", category: "technical", level: "intermediate" }])
+            setSkills((prev) => [
+              ...prev,
+              { uid: newSkillUid(), name: "", category: "technical", level: "intermediate" },
+            ])
           }
           disabled={busy}
         >
