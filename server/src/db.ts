@@ -96,6 +96,15 @@ export async function initDb(dataDir: string): Promise<Client> {
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS profile_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      filename TEXT NOT NULL,
+      mime TEXT,
+      size INTEGER NOT NULL,
+      content BLOB NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Columns added after the original schema shipped; also covers legacy on-disk
@@ -287,4 +296,81 @@ export async function deleteAnalysis(analysisId: number): Promise<void> {
     ],
     "write"
   );
+}
+
+export interface ProfileFileMeta {
+  id: number;
+  filename: string;
+  mime: string | null;
+  size: number;
+  createdAt: string;
+}
+
+export async function listProfileFiles(): Promise<ProfileFileMeta[]> {
+  const result = await getClient().execute(
+    "SELECT id, filename, mime, size, created_at FROM profile_files ORDER BY datetime(created_at) DESC"
+  );
+  return result.rows.map((row) => ({
+    id: Number(row.id),
+    filename: str(row.filename),
+    mime: strOrNull(row.mime),
+    size: Number(row.size) || 0,
+    createdAt: str(row.created_at),
+  }));
+}
+
+export async function insertProfileFile(input: {
+  filename: string;
+  mime: string | null;
+  content: Uint8Array;
+}): Promise<ProfileFileMeta> {
+  const now = new Date().toISOString();
+  const result = await getClient().execute({
+    sql: "INSERT INTO profile_files (filename, mime, size, content, created_at) VALUES (?, ?, ?, ?, ?)",
+    args: [input.filename, input.mime, input.content.byteLength, input.content, now],
+  });
+  const id = Number(result.lastInsertRowid);
+  return {
+    id,
+    filename: input.filename,
+    mime: input.mime,
+    size: input.content.byteLength,
+    createdAt: now,
+  };
+}
+
+export async function getProfileFile(
+  id: number
+): Promise<(ProfileFileMeta & { content: Uint8Array }) | undefined> {
+  const result = await getClient().execute({
+    sql: "SELECT id, filename, mime, size, created_at, content FROM profile_files WHERE id = ?",
+    args: [id],
+  });
+  const row = result.rows[0];
+  if (!row) return undefined;
+  return {
+    id: Number(row.id),
+    filename: str(row.filename),
+    mime: strOrNull(row.mime),
+    size: Number(row.size) || 0,
+    createdAt: str(row.created_at),
+    content: toBytes(row.content),
+  };
+}
+
+export async function deleteProfileFile(id: number): Promise<boolean> {
+  const result = await getClient().execute({
+    sql: "DELETE FROM profile_files WHERE id = ?",
+    args: [id],
+  });
+  return Number(result.rowsAffected) > 0;
+}
+
+function toBytes(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (Buffer.isBuffer(value)) return new Uint8Array(value);
+  if (Array.isArray(value)) return Uint8Array.from(value);
+  if (typeof value === "string") return Buffer.from(value, "base64");
+  return new Uint8Array();
 }

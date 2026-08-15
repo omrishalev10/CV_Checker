@@ -2,11 +2,15 @@ import { Router } from "express";
 import multer from "multer";
 import {
   deleteAnalysis,
+  deleteProfileFile,
   getAnalysis,
   getProfile,
+  getProfileFile,
   getTailoredCv,
   insertAnalysis,
+  insertProfileFile,
   listAnalyses,
+  listProfileFiles,
   saveProfile,
   saveTailoredCv,
 } from "../db.js";
@@ -20,7 +24,7 @@ import {
   mergeProfileUpdate,
   resetAiClient,
 } from "../services/ai.js";
-import { fetchGithubEvidence } from "../services/github.js";
+import { fetchGithubEvidence, githubUrlFromProfile, withGithubUrl } from "../services/github.js";
 import { fetchJobUrl } from "../services/urlFetch.js";
 import { renderDocx, renderPdf, type TailoredCvDoc } from "../services/tailorExport.js";
 import type { SkillProfile } from "../types.js";
@@ -101,6 +105,118 @@ export function createApiRouter(): Router {
       res.json(await saveProfile(profile, true));
     } catch (err) {
       next(err);
+    }
+  });
+
+  router.put("/profile/github", async (req, res, next) => {
+    try {
+      const url = String(req.body?.url || "");
+      const current = (await getProfile())?.profile ?? emptyProfile();
+      const updated = withGithubUrl(current, url);
+      const saved = await saveProfile(updated, Boolean(await getProfile()));
+      res.json({ ...saved, exists: true, githubUrl: githubUrlFromProfile(saved.profile) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get("/profile/files", async (_req, res, next) => {
+    try {
+      res.json({ files: await listProfileFiles() });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/profile/files", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: "No file uploaded." });
+        return;
+      }
+      const saved = await insertProfileFile({
+        filename: req.file.originalname || "upload",
+        mime: req.file.mimetype || null,
+        content: new Uint8Array(req.file.buffer),
+      });
+      res.json(saved);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : "File upload failed" });
+    }
+  });
+
+  router.get("/profile/files/:id", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const file = await getProfileFile(id);
+      if (!file) {
+        res.status(404).json({ error: "File not found." });
+        return;
+      }
+      res.setHeader("Content-Type", file.mime || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${file.filename.replace(/"/g, "")}"`);
+      res.send(Buffer.from(file.content));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete("/profile/files/:id", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!(await deleteProfileFile(id))) {
+        res.status(404).json({ error: "File not found." });
+        return;
+      }
+      res.json({ deleted: id });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/profile/files/apply", async (req, res) => {
+    try {
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
+      if (!ids.length) {
+        res.status(400).json({ error: "Select at least one file." });
+        return;
+      }
+      if (ids.length > 8) {
+        res.status(400).json({ error: "Apply at most 8 files at a time." });
+        return;
+      }
+
+      let current = await getProfile();
+      const diffs: { filename: string; summary: string }[] = [];
+
+      for (const id of ids) {
+        const file = await getProfileFile(id);
+        if (!file) {
+          res.status(404).json({ error: `File ${id} not found.` });
+          return;
+        }
+        const text = await extractTextFromBuffer(Buffer.from(file.content), file.filename, file.mime || "");
+        if (text.trim().length < 40) {
+          res.status(400).json({
+            error: `"${file.filename}" doesn't contain enough text to update the profile.`,
+          });
+          return;
+        }
+
+        if (!current) {
+          const extracted = await extractProfileFromCvText(text);
+          current = await saveProfile(extracted, true);
+          diffs.push({ filename: file.filename, summary: "Created profile from this file." });
+        } else {
+          const merged = await mergeProfileUpdate(current.profile, { kind: "cv", content: text });
+          current = await saveProfile(merged.profile, true);
+          diffs.push({ filename: file.filename, summary: merged.diff.summary });
+        }
+      }
+
+      res.json({ ...current, exists: true, diffs });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : "Could not update profile from files" });
     }
   });
 

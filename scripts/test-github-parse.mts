@@ -1,4 +1,9 @@
-import { parseGithubUsername, githubUsernameFromProfile } from "../server/src/services/github.ts";
+import {
+  parseGithubUsername,
+  githubUsernameFromProfile,
+  githubUrlFromProfile,
+  withGithubUrl,
+} from "../server/src/services/github.ts";
 import type { SkillProfile } from "../server/src/types.ts";
 
 const empty: SkillProfile = {
@@ -30,6 +35,12 @@ check(
     links: [{ label: "Code", url: "https://github.com/torvalds" }],
   }),
   "torvalds"
+);
+
+check(
+  "withGithubUrl sets link",
+  githubUrlFromProfile(withGithubUrl(empty, "https://github.com/octocat")),
+  "https://github.com/octocat"
 );
 
 check(

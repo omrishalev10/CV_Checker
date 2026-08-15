@@ -204,4 +204,23 @@ export const api = {
     }).then(parseJson),
   removePassword: (): Promise<AuthStatus & { note?: string }> =>
     fetch("/api/auth/password", { method: "DELETE" }).then(parseJson),
+  saveGithub: (url: string) =>
+    fetch("/api/profile/github", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }).then(parseJson),
+  listFiles: () => fetch("/api/profile/files").then(parseJson),
+  uploadFile: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetch("/api/profile/files", { method: "POST", body: fd }).then(parseJson);
+  },
+  deleteFile: (id: number) => fetch(`/api/profile/files/${id}`, { method: "DELETE" }).then(parseJson),
+  applyFiles: (ids: number[]) =>
+    fetch("/api/profile/files/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).then(parseJson),
 };

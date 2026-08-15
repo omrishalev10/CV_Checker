@@ -108,7 +108,7 @@ export default function MatchDetailPage() {
       <div className="row" style={{ justifyContent: "space-between" }}>
         <div>
           <p className="muted" style={{ margin: 0 }}>
-            <Link to="/history">← History</Link>
+            <Link to="/history">← My jobs</Link>
           </p>
           <h1>
             {analysis.jobTitle || "Job match"}

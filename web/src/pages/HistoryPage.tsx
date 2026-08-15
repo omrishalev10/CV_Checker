@@ -37,14 +37,14 @@ export default function HistoryPage() {
   return (
     <section className="stack">
       <div>
-        <h1>Match history</h1>
-        <p className="lede">Revisit past analyses and any tailored CVs linked to them.</p>
+        <h1>My jobs</h1>
+        <p className="lede">Jobs you already checked, with scores and any tailored CVs.</p>
       </div>
       {error && <div className="error">{error}</div>}
       {info && <div className="success">{info}</div>}
       <div className="panel">
         {matches.length === 0 ? (
-          <p className="muted">No matches yet. Analyze a job to see it here.</p>
+          <p className="muted">No jobs yet. Check a job to see it here.</p>
         ) : (
           matches.map((m) => (
             <div className="history-row" key={m.id}>

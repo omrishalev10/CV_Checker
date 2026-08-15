@@ -13,13 +13,13 @@ export default function HomePage() {
       <div className="grid-2">
         <div className="panel stack">
           <h2>Start here</h2>
-          <p className="muted">Upload or paste your CV, review the extracted profile, then match jobs.</p>
+          <p className="muted">Upload files, add GitHub, review your profile, then check a job.</p>
           <div className="row">
             <Link className="btn btn-primary" to="/profile">
               Build profile
             </Link>
             <Link className="btn btn-ghost" to="/match">
-              Match a job
+              Check a job
             </Link>
           </div>
         </div>
@@ -30,8 +30,8 @@ export default function HomePage() {
             stay direct — no false encouragement.
           </p>
           <p className="muted">
-            Data stays on this machine in a local SQLite database. Add your AI API key under Settings — it
-            never leaves the server.
+            Your data lives in your CareerFit database. Add an AI API key under Settings — it never
+            leaves the server.
           </p>
         </div>
       </div>

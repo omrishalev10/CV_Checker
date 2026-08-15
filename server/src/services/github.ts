@@ -81,6 +81,40 @@ export function githubUsernameFromProfile(profile: SkillProfile): string | null 
   return null;
 }
 
+export function githubUrlFromProfile(profile: SkillProfile): string {
+  for (const link of profile.links || []) {
+    if (link.url && parseGithubUsername(link.url)) return link.url;
+  }
+  const username = githubUsernameFromProfile(profile);
+  return username ? `https://github.com/${username}` : "";
+}
+
+/** Upsert or remove the GitHub link without touching other profile links. */
+export function withGithubUrl(profile: SkillProfile, url: string): SkillProfile {
+  const trimmed = url.trim();
+  const links = [...(profile.links || [])];
+  const idx = links.findIndex(
+    (link) => parseGithubUsername(link.url || "") || /github/i.test(link.label || "")
+  );
+
+  if (!trimmed) {
+    if (idx >= 0) links.splice(idx, 1);
+    return { ...profile, links };
+  }
+
+  const parsed = parseGithubUsername(trimmed);
+  const normalized = parsed
+    ? trimmed.startsWith("http")
+      ? trimmed.split(/[?#]/)[0].replace(/\/+$/, "")
+      : `https://github.com/${parsed}`
+    : `https://github.com/${trimmed.replace(/^@/, "").replace(/^https?:\/\/[^/]+\//, "").split("/")[0]}`;
+  const entry = { label: "GitHub", url: normalized };
+
+  if (idx >= 0) links[idx] = entry;
+  else links.push(entry);
+  return { ...profile, links };
+}
+
 async function githubGet(path: string): Promise<{ ok: boolean; status: number; json: unknown }> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",

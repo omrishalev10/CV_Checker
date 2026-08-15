@@ -58,7 +58,7 @@ export default function SettingsPage() {
     <section className="stack">
       <div>
         <h1>Settings</h1>
-        <p className="lede">Add your AI API key so CareerFit can analyze CVs and job descriptions.</p>
+        <p className="lede">API key, app password, and appearance. Dark mode is in the header on every page.</p>
       </div>
 
       {error && <div className="error">{error}</div>}

@@ -8,6 +8,8 @@ import SettingsPage from "./pages/SettingsPage";
 import AppModeToggle from "./components/AppModeToggle";
 import AuthGate from "./components/AuthGate";
 
+import ThemeToggle from "./components/ThemeToggle";
+
 export default function App() {
   return (
     <AuthGate>
@@ -21,14 +23,15 @@ export default function App() {
               Profile
             </NavLink>
             <NavLink to="/match" className={({ isActive }) => (isActive ? "active" : "")}>
-              Match
+              Check job
             </NavLink>
             <NavLink to="/history" className={({ isActive }) => (isActive ? "active" : "")}>
-              History
+              My jobs
             </NavLink>
             <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
               Settings
             </NavLink>
+            <ThemeToggle />
             <AppModeToggle />
           </nav>
         </header>

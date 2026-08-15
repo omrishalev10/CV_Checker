@@ -52,7 +52,7 @@ export default function MatchPage() {
   return (
     <section className="stack">
       <div>
-        <h1>Match a job</h1>
+        <h1>Check a job</h1>
         <p className="lede">
           Paste text, upload a screenshot, or give a URL. CareerFit scores fit against your current skill
           profile.
