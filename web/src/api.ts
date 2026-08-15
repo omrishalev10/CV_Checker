@@ -112,11 +112,33 @@ export function onAuthRequired(handler: (() => void) | null): void {
   authRequiredHandler = handler;
 }
 
+function humanizeClientError(raw: unknown, status: number): string {
+  if (raw && typeof raw === "object" && "message" in raw && typeof (raw as { message: unknown }).message === "string") {
+    return humanizeClientError((raw as { message: string }).message, status);
+  }
+  const text = typeof raw === "string" ? raw : raw != null ? JSON.stringify(raw) : `Request failed (${status})`;
+  try {
+    const parsed = JSON.parse(text) as { error?: { code?: number; message?: string; status?: string }; message?: string; status?: string; code?: number };
+    const inner = parsed.error ?? parsed;
+    const blob = `${inner.code ?? ""} ${inner.status ?? ""} ${inner.message ?? ""}`;
+    if (inner.code === 503 || inner.status === "UNAVAILABLE" || /high demand|overloaded/i.test(blob)) {
+      return "The AI model is busy right now. Wait about a minute and try again.";
+    }
+    if (typeof inner.message === "string" && inner.message.trim()) return inner.message;
+  } catch {
+    /* not provider JSON */
+  }
+  if (/high demand|UNAVAILABLE|"code":\s*503/i.test(text)) {
+    return "The AI model is busy right now. Wait about a minute and try again.";
+  }
+  return text;
+}
+
 async function parseJson(res: Response) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && data.authRequired) authRequiredHandler?.();
-    throw new Error(data.error || `Request failed (${res.status})`);
+    throw new Error(humanizeClientError(data.error ?? data, res.status));
   }
   return data;
 }

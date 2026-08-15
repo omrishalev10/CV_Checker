@@ -10,6 +10,20 @@ import type {
 import { scoreToLabel } from "../types.js";
 import { getModel, getProvider, resolveApiKey } from "../settings.js";
 import { fetchGithubEvidence, type GithubEvidence } from "./github.js";
+import {
+  humanizeAiError,
+  isModelMissingError,
+  isRetryableAiError,
+  sleep,
+} from "./aiErrors.js";
+import { parseJsonLoose } from "./jsonParse.js";
+
+const GEMINI_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
+
+function geminiModelChain(): string[] {
+  const primary = getModel();
+  return [primary, ...GEMINI_FALLBACK_MODELS.filter((model) => model !== primary)];
+}
 
 let geminiClient: GoogleGenAI | null = null;
 let geminiKey: string | null = null;
@@ -49,20 +63,6 @@ function getAnthropic(): Anthropic {
   return anthropicClient;
 }
 
-function parseJsonLoose<T>(text: string): T {
-  const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      return JSON.parse(cleaned.slice(start, end + 1)) as T;
-    }
-    throw new Error(`AI returned non-JSON response: ${cleaned.slice(0, 400)}`);
-  }
-}
-
 type TextOrVision =
   | string
   | {
@@ -89,26 +89,45 @@ async function completeJsonGemini<T>(
           ]
         : user.text;
 
-  const response = await getGemini().models.generateContent({
-    model: getModel(),
-    contents,
-    config: {
-      systemInstruction: `${system}\n\nRespond with valid JSON only. No markdown fences, no commentary.`,
-      responseMimeType: "application/json",
-      temperature: opts.temperature ?? 0.2,
-      maxOutputTokens: 32768,
-    },
-  });
+  const models = geminiModelChain();
+  let lastError: unknown;
 
-  if (response.candidates?.[0]?.finishReason === "MAX_TOKENS") {
-    throw new Error(
-      "The AI response was cut off before it finished. Try again, or shorten the job description."
-    );
+  for (let m = 0; m < models.length; m++) {
+    const model = models[m];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await getGemini().models.generateContent({
+          model,
+          contents,
+          config: {
+            systemInstruction: `${system}\n\nRespond with valid JSON only. No markdown fences, no commentary.`,
+            responseMimeType: "application/json",
+            temperature: opts.temperature ?? 0.2,
+            maxOutputTokens: 32768,
+          },
+        });
+
+        if (response.candidates?.[0]?.finishReason === "MAX_TOKENS") {
+          throw new Error(
+            "The AI response was cut off before it finished. Try again, or shorten the job description."
+          );
+        }
+
+        const text = response.text;
+        if (!text) throw new Error("AI returned an empty response.");
+        return parseJsonLoose<T>(text);
+      } catch (err) {
+        lastError = err;
+        if (isModelMissingError(err)) break;
+        if (!isRetryableAiError(err)) throw humanizeAiError(err);
+        if (attempt === 0) {
+          await sleep(400 + Math.floor(Math.random() * 250));
+        }
+      }
+    }
   }
 
-  const text = response.text;
-  if (!text) throw new Error("AI returned an empty response.");
-  return parseJsonLoose<T>(text);
+  throw humanizeAiError(lastError);
 }
 
 async function completeJsonAnthropic<T>(
@@ -133,26 +152,37 @@ async function completeJsonAnthropic<T>(
           ]
         : user.text;
 
-  const response = await getAnthropic().messages.create({
-    model: getModel(),
-    max_tokens: 8192,
-    temperature: opts.temperature ?? 0.2,
-    system: `${system}\n\nRespond with valid JSON only. No markdown fences, no commentary.`,
-    messages: [{ role: "user", content }],
-  });
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await getAnthropic().messages.create({
+        model: getModel(),
+        max_tokens: 8192,
+        temperature: opts.temperature ?? 0.2,
+        system: `${system}\n\nRespond with valid JSON only. No markdown fences, no commentary.`,
+        messages: [{ role: "user", content }],
+      });
 
-  if (response.stop_reason === "max_tokens") {
-    throw new Error(
-      "The AI response was cut off before it finished. Try again, or shorten the job description."
-    );
+      if (response.stop_reason === "max_tokens") {
+        throw new Error(
+          "The AI response was cut off before it finished. Try again, or shorten the job description."
+        );
+      }
+
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      if (!text) throw new Error("AI returned an empty response.");
+      return parseJsonLoose<T>(text);
+    } catch (err) {
+      lastError = err;
+      if (!isRetryableAiError(err) || attempt === 1) throw humanizeAiError(err);
+      await sleep(400 + Math.floor(Math.random() * 250));
+    }
   }
 
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-  if (!text) throw new Error("AI returned an empty response.");
-  return parseJsonLoose<T>(text);
+  throw humanizeAiError(lastError);
 }
 
 async function completeJson<T>(
