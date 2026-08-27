@@ -133,6 +133,7 @@ export async function initDb(dataDir: string): Promise<Client> {
     grade_json: "TEXT",
     cv_json: "TEXT",
   });
+  await migrateTailoredCvVersions();
 
   await loadSettingsCache(client);
   bindAuthClient(client);
@@ -152,6 +153,31 @@ async function addMissingColumns(table: string, columns: Record<string, string>)
       await client.execute(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
     }
   }
+}
+
+async function migrateTailoredCvVersions(): Promise<void> {
+  await getClient().execute(`
+    CREATE TABLE IF NOT EXISTS tailored_cv_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      analysis_id INTEGER NOT NULL,
+      diff_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      grade_json TEXT,
+      cv_json TEXT,
+      FOREIGN KEY (analysis_id) REFERENCES analyses(id) ON DELETE CASCADE
+    )
+  `);
+  await getClient().execute(
+    "CREATE INDEX IF NOT EXISTS idx_tailored_cv_versions_analysis ON tailored_cv_versions (analysis_id, created_at)"
+  );
+  const versions = await getClient().execute("SELECT COUNT(*) AS c FROM tailored_cv_versions");
+  if (Number(versions.rows[0]?.c || 0) > 0) return;
+  const legacy = await getClient().execute("SELECT COUNT(*) AS c FROM tailored_cvs");
+  if (Number(legacy.rows[0]?.c || 0) === 0) return;
+  await getClient().execute(`
+    INSERT INTO tailored_cv_versions (analysis_id, diff_json, created_at, grade_json, cv_json)
+    SELECT analysis_id, diff_json, created_at, grade_json, cv_json FROM tailored_cvs
+  `);
 }
 
 async function migrateToMultiUser(): Promise<void> {
@@ -439,13 +465,8 @@ export async function saveTailoredCv(input: {
   }
   const now = new Date().toISOString();
   await getClient().execute({
-    sql: `INSERT INTO tailored_cvs (analysis_id, diff_json, created_at, grade_json, cv_json)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(analysis_id) DO UPDATE SET
-            diff_json = excluded.diff_json,
-            created_at = excluded.created_at,
-            grade_json = excluded.grade_json,
-            cv_json = excluded.cv_json`,
+    sql: `INSERT INTO tailored_cv_versions (analysis_id, diff_json, created_at, grade_json, cv_json)
+          VALUES (?, ?, ?, ?, ?)`,
     args: [
       input.analysisId,
       JSON.stringify(input.diff),
@@ -454,19 +475,43 @@ export async function saveTailoredCv(input: {
       input.cv ? JSON.stringify(input.cv) : null,
     ],
   });
-
   const result = await getClient().execute({
-    sql: "SELECT * FROM tailored_cvs WHERE analysis_id = ?",
+    sql: "SELECT * FROM tailored_cv_versions WHERE analysis_id = ? ORDER BY id DESC LIMIT 1",
     args: [input.analysisId],
   });
   return toTailoredRow(result.rows[0]);
 }
 
-export async function getTailoredCv(analysisId: number): Promise<TailoredCvRow | undefined> {
-  if (!(await getAnalysis(analysisId))) return undefined;
+export async function updateTailoredCvGrade(id: number, grade: TailoredCvGrade): Promise<TailoredCvRow | undefined> {
+  const existing = await getTailoredCvById(id);
+  if (!existing) return undefined;
+  await getClient().execute({
+    sql: "UPDATE tailored_cv_versions SET grade_json = ? WHERE id = ?",
+    args: [JSON.stringify(grade), id],
+  });
+  return getTailoredCvById(id);
+}
+
+export async function listTailoredCvs(analysisId: number): Promise<TailoredCvRow[]> {
+  if (!(await getAnalysis(analysisId))) return [];
   const result = await getClient().execute({
-    sql: "SELECT * FROM tailored_cvs WHERE analysis_id = ?",
+    sql: "SELECT * FROM tailored_cv_versions WHERE analysis_id = ? ORDER BY datetime(created_at) DESC, id DESC",
     args: [analysisId],
+  });
+  return result.rows.map(toTailoredRow);
+}
+
+export async function getTailoredCv(analysisId: number): Promise<TailoredCvRow | undefined> {
+  const versions = await listTailoredCvs(analysisId);
+  return versions[0];
+}
+
+export async function getTailoredCvById(id: number): Promise<TailoredCvRow | undefined> {
+  const result = await getClient().execute({
+    sql: `SELECT v.* FROM tailored_cv_versions v
+          INNER JOIN analyses a ON a.id = v.analysis_id
+          WHERE v.id = ? AND a.user_id = ?`,
+    args: [id, uid()],
   });
   const row = result.rows[0];
   return row ? toTailoredRow(row) : undefined;
@@ -476,6 +521,7 @@ export async function deleteAnalysis(analysisId: number): Promise<void> {
   if (!(await getAnalysis(analysisId))) return;
   await getClient().batch(
     [
+      { sql: "DELETE FROM tailored_cv_versions WHERE analysis_id = ?", args: [analysisId] },
       { sql: "DELETE FROM tailored_cvs WHERE analysis_id = ?", args: [analysisId] },
       { sql: "DELETE FROM analyses WHERE id = ? AND user_id = ?", args: [analysisId, uid()] },
     ],

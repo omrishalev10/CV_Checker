@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, MatchSummary } from "../api";
+import { downloadFromApi } from "../download";
+
+function fitClass(score: number, label?: string | null): string {
+  if (label) return label.toLowerCase();
+  if (score >= 85) return "strong";
+  if (score >= 65) return "high";
+  if (score >= 40) return "medium";
+  return "low";
+}
 
 export default function HistoryPage() {
   const [matches, setMatches] = useState<MatchSummary[]>([]);
@@ -8,6 +17,7 @@ export default function HistoryPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   function load() {
     api
@@ -17,6 +27,18 @@ export default function HistoryPage() {
   }
 
   useEffect(load, []);
+
+  async function onPdf(m: MatchSummary) {
+    setDownloadingId(m.id);
+    setError(null);
+    try {
+      await downloadFromApi(`/api/matches/${m.id}/cv/pdf`, `CareerFit-tailored-${m.id}.pdf`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   async function onDelete(m: MatchSummary) {
     setDeletingId(m.id);
@@ -74,13 +96,37 @@ export default function HistoryPage() {
                   {new Date(m.createdAt).toLocaleString()} · {m.sourceType}
                   {m.hasTailoredCv
                     ? m.tailoredScore !== null
-                      ? ` · tailored CV graded ${m.tailoredScore}`
-                      : " · tailored CV ready"
+                      ? ` · ${m.tailoredCvCount || 1} tailored CV${(m.tailoredCvCount || 1) === 1 ? "" : "s"} · graded ${m.tailoredScore}`
+                      : ` · ${m.tailoredCvCount || 1} tailored CV${(m.tailoredCvCount || 1) === 1 ? "" : "s"} ready`
                     : ""}
                 </div>
                 <div>{m.recommendation}</div>
               </Link>
               <div className="history-actions">
+                {m.hasTailoredCv && confirmId !== m.id && (
+                  <div className="history-pdf">
+                    {m.tailoredScore !== null && (
+                      <span
+                        className={`badge ${fitClass(m.tailoredScore, m.tailoredLabel)}`}
+                        title="Latest tailored CV fit"
+                      >
+                        {m.tailoredScore}
+                      </span>
+                    )}
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => onPdf(m)}
+                      disabled={downloadingId === m.id || deletingId === m.id}
+                      aria-label={`Download latest tailored PDF for ${m.jobTitle || "this job"}`}
+                    >
+                      {downloadingId === m.id
+                        ? "Preparing…"
+                        : (m.tailoredCvCount || 1) > 1
+                          ? `PDF · ${m.tailoredCvCount}`
+                          : "PDF"}
+                    </button>
+                  </div>
+                )}
                 {confirmId === m.id ? (
                   <>
                     <button

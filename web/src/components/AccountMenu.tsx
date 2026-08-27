@@ -18,10 +18,10 @@ export default function AccountMenu() {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
-    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("click", onDoc);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("click", onDoc);
       document.removeEventListener("keydown", onKey);
     };
   }, []);
@@ -31,7 +31,7 @@ export default function AccountMenu() {
       <button
         type="button"
         className="avatar-btn"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={menuId}
         aria-label={username ? `Account menu for ${username}` : "Account menu"}
@@ -43,7 +43,7 @@ export default function AccountMenu() {
         <span className="avatar-name">{username}</span>
       </button>
       {open && (
-        <div className="account-popover" id={menuId} role="menu">
+        <div className="account-popover" id={menuId}>
           <div className="account-head">
             <span className="avatar" aria-hidden="true">
               {initial}
@@ -53,7 +53,7 @@ export default function AccountMenu() {
               <p className="muted">Your private studio</p>
             </div>
           </div>
-          <Link to="/settings" className="menu-item" role="menuitem" onClick={() => setOpen(false)}>
+          <Link to="/settings" className="menu-item" onClick={() => setOpen(false)}>
             Settings
           </Link>
           <ThemeToggle variant="row" />
@@ -61,7 +61,6 @@ export default function AccountMenu() {
           <button
             type="button"
             className="menu-item danger"
-            role="menuitem"
             onClick={() => {
               setOpen(false);
               void signOut();

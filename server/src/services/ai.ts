@@ -8,6 +8,7 @@ import type {
   TailoredCvGrade,
 } from "../types.js";
 import { scoreToLabel } from "../types.js";
+import { resolveCvAgent } from "../agents/cvAgent.js";
 import { getModel, getProvider, resolveApiKey } from "../settings.js";
 import { fetchGithubEvidence, type GithubEvidence, withGithubLink } from "./github.js";
 import {
@@ -73,6 +74,7 @@ type TextOrVision =
 interface CompleteOptions {
   temperature?: number;
   maxOutputTokens?: number;
+  timeoutMs?: number;
 }
 
 function thinkingConfigFor(model: string): { thinkingLevel: ThinkingLevel } | { thinkingBudget: number } | undefined {
@@ -113,7 +115,7 @@ async function completeJsonGemini<T>(
             responseMimeType: "application/json",
             temperature: opts.temperature ?? 0.2,
             maxOutputTokens: opts.maxOutputTokens ?? 8192,
-            abortSignal: AbortSignal.timeout(GEMINI_ATTEMPT_MS),
+            abortSignal: AbortSignal.timeout(opts.timeoutMs ?? GEMINI_ATTEMPT_MS),
             ...(thinkingConfig ? { thinkingConfig } : {}),
           },
         });
@@ -170,13 +172,16 @@ async function completeJsonAnthropic<T>(
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await (await getAnthropic()).messages.create({
-        model: getModel(),
-        max_tokens: 8192,
-        temperature: opts.temperature ?? 0.2,
-        system: `${system}\n\nRespond with valid JSON only. No markdown fences, no commentary.`,
-        messages: [{ role: "user", content }],
-      });
+      const response = await (await getAnthropic()).messages.create(
+        {
+          model: getModel(),
+          max_tokens: opts.maxOutputTokens ?? 8192,
+          temperature: opts.temperature ?? 0.2,
+          system: `${system}\n\nRespond with valid JSON only. No markdown fences, no commentary.`,
+          messages: [{ role: "user", content }],
+        },
+        { timeout: opts.timeoutMs ?? GEMINI_ATTEMPT_MS }
+      );
 
       if (response.stop_reason === "max_tokens") {
         throw new Error(
@@ -388,68 +393,22 @@ atsIssues: structural problems an ATS parser could trip on (empty array if none)
   };
 }
 
-export async function generateTailoredCvContent(
-  profile: SkillProfile,
-  analysis: MatchAnalysis,
-  jobText: string,
-  baseCvText?: string | null
-): Promise<{
-  cv: {
-    name?: string;
-    headline: string;
-    links?: { label: string; url: string }[];
-    summary: string;
-    skills: string[];
-    experience: {
-      title: string;
-      company: string;
-      dates: string;
-      bullets: string[];
-    }[];
-    projects: {
-      name: string;
-      url?: string | null;
-      stack?: string[];
-      bullets: string[];
-    }[];
-    education: { line: string; details?: string }[];
-    certifications: string[];
-  };
-  diff: TailorDiff;
-  github: GithubEvidence;
-}> {
-  const github = await fetchGithubEvidence(profile);
+function tailorSystemPrompt(agentName: string, agentInstructions: string): string {
+  return `${agentInstructions}
 
-  const generated = await completeJson<{
-    cv: {
-      name?: string;
-      headline: string;
-      summary: string;
-      skills: string[];
-      experience: {
-        title: string;
-        company: string;
-        dates: string;
-        bullets: string[];
-      }[];
-      projects?: {
-        name: string;
-        url?: string | null;
-        stack?: string[];
-        bullets: string[];
-      }[];
-      education: { line: string; details?: string }[];
-      certifications: string[];
-    };
-    diff: TailorDiff;
-  }>(
-    `You generate an ATS-optimized tailored CV from a real Skill Profile for a specific job.
+---
 
-HARD RULES:
-- NEVER invent experience, skills, employers, degrees, certifications, or projects.
+# CAREERFIT RUNTIME CONTRACT
+
+You are running inside CareerFit as "${agentName}".
+Follow the agent instructions above for job-description intelligence, keyword strategy, evidence classification, headline/summary/bullet quality, ATS structure, the three-person review, and interview defensibility.
+Do that analysis internally. Do not emit markdown tables, match-analysis sections, or quality-score grids.
+
+HARD RULES (these win if anything in the agent instructions conflicts):
+- NEVER invent experience, skills, employers, degrees, certifications, metrics, or projects.
 - You may reorder, re-emphasize, reword, and mirror job-description terminology ONLY when the candidate genuinely has the equivalent skill/experience.
 - Prefer single-column, plain sections suitable for ATS parsers.
-- Keyword skills list may only include skills the candidate actually has.
+- Skills may only include skills the candidate actually has. Group them with labeled strings when useful (example: "Languages: C++, C, Python").
 - ALWAYS put the candidate's GitHub profile URL in cv.links (https://github.com/<username> from the Skill Profile / GitHub evidence). Do not omit it. Other real profile links (LinkedIn, portfolio) may be included too.
 - If a Base CV document is provided, start from that document. Keep its wording, bullets, and section shape unless a change is needed for this job. Skill Profile is the fact-check; do not invent facts that are in neither source.
 
@@ -485,11 +444,71 @@ Return JSON:
     "warning": string|null
   }
 }
-In diff.changes, mention expansions (stronger bullets, reordering, which GitHub projects were added).
-In diff.notAdded, list job requirements you deliberately did NOT claim because they are absent from the profile and GitHub evidence.
-If fit is low, set warning explaining gaps remain and were not fabricated — the CV was expanded on real strengths instead.`,
+In diff.changes, put the change log (added, removed, repositioned, reworded) including expansions and which GitHub projects were added.
+In diff.notAdded, list job requirements you deliberately did NOT claim because they are absent from the profile and GitHub evidence (the agent's Excluded keywords).
+If fit is low, set warning explaining gaps remain and were not fabricated — the CV was expanded on real strengths instead.`;
+}
+
+export async function generateTailoredCvContent(
+  profile: SkillProfile,
+  analysis: MatchAnalysis,
+  jobText: string,
+  baseCvText?: string | null
+): Promise<{
+  cv: {
+    name?: string;
+    headline: string;
+    links?: { label: string; url: string }[];
+    summary: string;
+    skills: string[];
+    experience: {
+      title: string;
+      company: string;
+      dates: string;
+      bullets: string[];
+    }[];
+    projects: {
+      name: string;
+      url?: string | null;
+      stack?: string[];
+      bullets: string[];
+    }[];
+    education: { line: string; details?: string }[];
+    certifications: string[];
+  };
+  diff: TailorDiff;
+  github: GithubEvidence;
+  agent: { name: string; usingDefault: boolean };
+}> {
+  const github = await fetchGithubEvidence(profile);
+  const agent = await resolveCvAgent();
+
+  const generated = await completeJson<{
+    cv: {
+      name?: string;
+      headline: string;
+      summary: string;
+      skills: string[];
+      experience: {
+        title: string;
+        company: string;
+        dates: string;
+        bullets: string[];
+      }[];
+      projects?: {
+        name: string;
+        url?: string | null;
+        stack?: string[];
+        bullets: string[];
+      }[];
+      education: { line: string; details?: string }[];
+      certifications: string[];
+    };
+    diff: TailorDiff;
+  }>(
+    tailorSystemPrompt(agent.name, agent.instructions),
     `Skill Profile:\n${JSON.stringify(profile, null, 2)}\n\nMatch analysis:\n${JSON.stringify(analysis, null, 2)}\n\nGitHub evidence:\n${JSON.stringify(github, null, 2)}\n\nBase CV document (start from this; empty if none):\n${(baseCvText || "").slice(0, 24000) || "(none — use the Skill Profile only)"}\n\nJob text:\n${jobText.slice(0, 24000)}`,
-    { maxOutputTokens: 16384 }
+    { maxOutputTokens: 16384, timeoutMs: 45_000 }
   );
 
   const projects = Array.isArray(generated.cv.projects) ? generated.cv.projects : [];
@@ -508,5 +527,6 @@ If fit is low, set warning explaining gaps remain and were not fabricated — th
     cv,
     diff: { ...generated.diff, changes },
     github,
+    agent: { name: agent.name, usingDefault: agent.usingDefault },
   };
 }

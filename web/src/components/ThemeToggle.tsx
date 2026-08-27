@@ -35,7 +35,7 @@ export default function ThemeToggle({ variant = "icon" }: { variant?: "icon" | "
 
   if (variant === "row") {
     return (
-      <button type="button" className="menu-item switch-row" onClick={toggle} role="menuitem">
+      <button type="button" className="menu-item switch-row" onClick={toggle}>
         <span>Appearance</span>
         <span className={`switch ${isDark ? "on" : ""}`} aria-hidden="true">
           <span className="switch-knob" />

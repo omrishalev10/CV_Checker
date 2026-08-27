@@ -7,13 +7,16 @@ import MatchDetailPage from "./pages/MatchDetailPage";
 import SettingsPage from "./pages/SettingsPage";
 import AccountMenu from "./components/AccountMenu";
 import AuthGate from "./components/AuthGate";
+import { AppInstallProvider } from "./components/AppModeToggle";
 import BottomNav from "./components/BottomNav";
 import BrandMark from "./components/BrandMark";
 
 export default function App() {
   return (
     <AuthGate>
-      <AppShell />
+      <AppInstallProvider>
+        <AppShell />
+      </AppInstallProvider>
     </AuthGate>
   );
 }
@@ -40,7 +43,9 @@ function AppShell() {
             Settings
           </NavLink>
         </nav>
-        <AccountMenu />
+        <div className="topbar-end">
+          <AccountMenu />
+        </div>
       </header>
       <main className="app-main">
         <Routes>

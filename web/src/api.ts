@@ -73,6 +73,15 @@ export interface TailorDiff {
   warning?: string | null;
 }
 
+export interface TailoredCvVersion {
+  id: number;
+  diff: TailorDiff;
+  grade: TailoredCvGrade | null;
+  hasDocx: boolean;
+  hasPdf: boolean;
+  createdAt: string;
+}
+
 export interface TailoredCvGrade {
   score: number;
   label: FitLabel;
@@ -97,13 +106,22 @@ export interface MatchSummary {
   recommendation: string;
   createdAt: string;
   hasTailoredCv: boolean;
+  tailoredCvCount: number;
   tailoredScore: number | null;
+  tailoredLabel: string | null;
 }
 
 export interface AuthStatus {
   enabled: boolean;
   authenticated: boolean;
   username?: string | null;
+}
+
+export interface CvAgent {
+  name: string;
+  instructions: string;
+  usingDefault: boolean;
+  defaultName: string;
 }
 
 /** Set by AuthGate so an expired session anywhere in the app bounces back to the lock screen. */
@@ -246,7 +264,7 @@ export const api = {
   },
   listMatches: () => fetch("/api/matches").then(parseJson),
   getMatch: (id: number) => fetch(`/api/matches/${id}`).then(parseJson),
-  tailor: (id: number) => fetchJson(`/api/matches/${id}/tailor`, { method: "POST" }, 90_000),
+  tailor: (id: number) => fetchJson(`/api/matches/${id}/tailor`, { method: "POST" }, 150_000),
   gradeCv: (id: number) => fetchJson(`/api/matches/${id}/grade`, { method: "POST" }, 90_000),
   deleteMatch: (id: number) => fetch(`/api/matches/${id}`, { method: "DELETE" }).then(parseJson),
   getSettings: () => fetch("/api/settings").then(parseJson),
@@ -257,6 +275,13 @@ export const api = {
       body: JSON.stringify({ apiKey }),
     }).then(parseJson),
   clearApiKey: () => fetch("/api/settings/api-key", { method: "DELETE" }).then(parseJson),
+  saveCvAgent: (name: string, instructions: string) =>
+    fetch("/api/settings/cv-agent", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, instructions }),
+    }).then(parseJson),
+  resetCvAgent: () => fetch("/api/settings/cv-agent", { method: "DELETE" }).then(parseJson),
   authStatus: (): Promise<AuthStatus> => fetch("/api/auth/status").then(parseJson),
   signup: (username: string, password: string): Promise<AuthStatus> =>
     fetch("/api/auth/signup", {

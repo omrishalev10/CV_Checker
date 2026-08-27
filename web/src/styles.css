@@ -209,7 +209,7 @@ select {
 }
 
 .nav-primary {
-  margin-left: auto;
+  margin-left: 0.35rem;
   margin-right: 0.25rem;
 }
 
@@ -373,6 +373,12 @@ input[type="file"] {
 textarea {
   min-height: 10rem;
   resize: vertical;
+}
+
+.agent-instructions {
+  min-height: 22rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
 }
 
 textarea:focus,
@@ -583,6 +589,19 @@ a.btn:hover {
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.history-pdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.history-pdf .badge {
+  min-width: 2.5rem;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (min-width: 640px) {
@@ -598,6 +617,30 @@ a.btn:hover {
 
 .history-item:hover .title {
   color: var(--accent);
+}
+
+.version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.version-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.version-row.is-latest {
+  border-color: color-mix(in srgb, var(--gold) 50%, var(--line));
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
 }
 
 .grid-2 {
@@ -657,6 +700,14 @@ a.btn:hover {
   font-size: 0.85rem;
 }
 
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .mode-toggle {
   position: relative;
   display: inline-flex;
@@ -672,6 +723,11 @@ a.btn:hover {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.mode-btn:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .mode-chip {
@@ -924,9 +980,10 @@ a.btn:hover {
 .menu-help {
   display: grid;
   gap: 0.4rem;
-  padding: 0.45rem 0.7rem 0.7rem;
+  padding: 0.55rem 0.7rem 0.8rem;
   color: var(--muted);
   font-size: 0.88rem;
+  line-height: 1.45;
 }
 
 .switch-row {

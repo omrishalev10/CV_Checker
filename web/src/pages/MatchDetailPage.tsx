@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, MatchAnalysis, TailorDiff, TailoredCvGrade } from "../api";
+import { api, MatchAnalysis, TailoredCvGrade, TailoredCvVersion } from "../api";
 import { downloadFromApi } from "../download";
 
 export default function MatchDetailPage() {
@@ -15,19 +15,19 @@ export default function MatchDetailPage() {
     sourceRef: string | null;
     createdAt: string;
   } | null>(null);
-  const [tailored, setTailored] = useState<{
-    diff: TailorDiff;
-    grade: TailoredCvGrade | null;
-    hasDocx: boolean;
-    hasPdf: boolean;
-  } | null>(null);
+  const [tailored, setTailored] = useState<TailoredCvVersion | null>(null);
+  const [versions, setVersions] = useState<TailoredCvVersion[]>([]);
+  const [agentName, setAgentName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
   async function load() {
-    const data = await api.getMatch(matchId);
+    const [data, settings] = await Promise.all([
+      api.getMatch(matchId),
+      api.getSettings().catch(() => null),
+    ]);
     setAnalysis(data.analysis);
     setMeta({
       profileVersion: data.profileVersion,
@@ -36,6 +36,8 @@ export default function MatchDetailPage() {
       createdAt: data.createdAt,
     });
     setTailored(data.tailored);
+    setVersions(data.versions || (data.tailored ? [data.tailored] : []));
+    if (settings?.cvAgent?.name) setAgentName(settings.cvAgent.name);
   }
 
   useEffect(() => {
@@ -49,6 +51,7 @@ export default function MatchDetailPage() {
     setInfo(null);
     try {
       const data = await api.tailor(matchId);
+      if (data.agent?.name) setAgentName(data.agent.name);
       setInfo(
         analysis && analysis.score < 40
           ? "Generated with gaps left honest — low fit roles are not spun to look qualified."
@@ -57,12 +60,7 @@ export default function MatchDetailPage() {
       if (data.gradeError) {
         setError(`CV saved, but grading failed: ${data.gradeError}`);
       }
-      setTailored({
-        diff: data.diff,
-        grade: data.grade || null,
-        hasDocx: true,
-        hasPdf: true,
-      });
+      await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Tailor failed");
     } finally {
@@ -82,14 +80,15 @@ export default function MatchDetailPage() {
     }
   }
 
-  async function onDownload(format: "docx" | "pdf") {
-    setDownloading(format);
+  async function onDownload(format: "docx" | "pdf", cvId?: number) {
+    const key = cvId ? `${format}-${cvId}` : format;
+    setDownloading(key);
     setError(null);
     try {
-      await downloadFromApi(
-        `/api/matches/${matchId}/cv/${format}`,
-        `CareerFit-tailored-${matchId}.${format}`
-      );
+      const url = cvId
+        ? `/api/matches/${matchId}/cvs/${cvId}/${format}`
+        : `/api/matches/${matchId}/cv/${format}`;
+      await downloadFromApi(url, `CareerFit-tailored-${matchId}${cvId ? `-${cvId}` : ""}.${format}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Download failed");
     } finally {
@@ -102,8 +101,8 @@ export default function MatchDetailPage() {
     setError(null);
     setInfo(null);
     try {
-      const data = await api.gradeCv(matchId);
-      setTailored((prev) => (prev ? { ...prev, grade: data.grade } : prev));
+      await api.gradeCv(matchId);
+      await load();
       setInfo("Tailored CV graded.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Grading failed");
@@ -174,7 +173,7 @@ export default function MatchDetailPage() {
       {busy && (
         <div className="loading-banner">
           <span className="spinner" />
-          Generating and grading tailored CV… (includes a public GitHub lookup if your profile has a GitHub link)
+        Generating and grading tailored CV… (uses your CV writing agent, plus a GitHub lookup if the profile has a link)
         </div>
       )}
 
@@ -217,7 +216,8 @@ export default function MatchDetailPage() {
         <h2>Tailored CV</h2>
         <p className="muted">
           Reorders, expands real strengths, and can add matching public GitHub projects.
-          Starts from your main CV when one is set on Profile. Gaps stay honest.
+          Starts from your main CV when one is set on Profile. Writing follows{" "}
+          {agentName ? <strong>{agentName}</strong> : "the CV agent"} in Settings. Gaps stay honest.
         </p>
         <div className="row">
           <button className="btn btn-primary" onClick={onTailor} disabled={busy}>
@@ -240,7 +240,7 @@ export default function MatchDetailPage() {
               onClick={() => onDownload("pdf")}
               disabled={busy || Boolean(downloading)}
             >
-              {downloading === "pdf" ? "Preparing PDF…" : "Download PDF"}
+              {downloading === "pdf" ? "Preparing PDF…" : "Download latest PDF"}
             </button>
           )}
           {tailored && !tailored.grade && (
@@ -249,6 +249,56 @@ export default function MatchDetailPage() {
             </button>
           )}
         </div>
+        {versions.length > 0 && (
+          <div className="stack">
+            <strong>Saved versions</strong>
+            <p className="muted" style={{ margin: 0 }}>
+              Each generate is kept. Download any PDF without losing the others.
+            </p>
+            <ul className="version-list">
+              {versions.map((v, i) => {
+                const n = versions.length - i;
+                const latest = i === 0;
+                return (
+                  <li className={`version-row ${latest ? "is-latest" : ""}`} key={v.id}>
+                    <div>
+                      <strong>
+                        Version {n}
+                        {latest ? " · latest" : ""}
+                      </strong>
+                      <div className="muted">
+                        {new Date(v.createdAt).toLocaleString()}
+                        {v.grade ? ` · graded ${v.grade.score}` : ""}
+                      </div>
+                    </div>
+                    <div className="row">
+                      {v.hasPdf && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => onDownload("pdf", v.id)}
+                          disabled={busy || Boolean(downloading)}
+                        >
+                          {downloading === `pdf-${v.id}` ? "Preparing…" : "PDF"}
+                        </button>
+                      )}
+                      {v.hasDocx && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => onDownload("docx", v.id)}
+                          disabled={busy || Boolean(downloading)}
+                        >
+                          {downloading === `docx-${v.id}` ? "Preparing…" : "DOCX"}
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
         {tailored?.grade && <GradeCard grade={tailored.grade} />}
         {tailored?.diff && (
           <div className="stack">

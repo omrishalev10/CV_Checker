@@ -8,13 +8,17 @@ import {
   getProfile,
   getProfileFile,
   getTailoredCv,
+  getTailoredCvById,
   insertAnalysis,
   insertProfileFile,
   listAnalyses,
   listProfileFiles,
+  listTailoredCvs,
   saveProfile,
   saveTailoredCv,
   setMainCvFileId,
+  updateTailoredCvGrade,
+  type TailoredCvRow,
 } from "../db.js";
 import { extractTextFromBuffer } from "../services/cvParse.js";
 import {
@@ -31,6 +35,7 @@ import { fetchJobUrl } from "../services/urlFetch.js";
 import { renderDocx, renderPdf, type TailoredCvDoc } from "../services/tailorExport.js";
 import type { SkillProfile } from "../types.js";
 import { emptyProfile } from "../types.js";
+import { resetCvAgent, resolveCvAgent, saveCvAgent } from "../agents/cvAgent.js";
 import { deleteUserSetting, maskSecret, resolveApiKey, setUserSetting } from "../settings.js";
 import { currentUserId } from "../context.js";
 
@@ -38,6 +43,17 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 12 * 1024 * 1024 },
 });
+
+function toTailoredPayload(row: TailoredCvRow) {
+  return {
+    id: row.id,
+    diff: JSON.parse(row.diff_json),
+    grade: row.grade_json ? JSON.parse(row.grade_json) : null,
+    hasDocx: Boolean(row.cv_json),
+    hasPdf: Boolean(row.cv_json),
+    createdAt: row.created_at,
+  };
+}
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -49,10 +65,37 @@ export function createApiRouter(): Router {
   router.get("/settings", async (_req, res, next) => {
     try {
       const key = await resolveApiKey();
+      const cvAgent = await resolveCvAgent();
       res.json({
         configured: Boolean(key),
         maskedKey: key ? maskSecret(key) : null,
+        cvAgent,
       });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.put("/settings/cv-agent", async (req, res, next) => {
+    try {
+      const name = String(req.body?.name || "");
+      const instructions = String(req.body?.instructions || "");
+      const cvAgent = await saveCvAgent(name, instructions);
+      res.json({ cvAgent });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save CV agent.";
+      if (message.includes("too long")) {
+        res.status(400).json({ error: message });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  router.delete("/settings/cv-agent", async (_req, res, next) => {
+    try {
+      const cvAgent = await resetCvAgent();
+      res.json({ cvAgent });
     } catch (err) {
       next(err);
     }
@@ -432,7 +475,8 @@ export function createApiRouter(): Router {
       const matches = [];
       for (const r of rows) {
         const analysis = JSON.parse(r.analysis_json);
-        const tailored = await getTailoredCv(r.id);
+        const versions = await listTailoredCvs(r.id);
+        const tailored = versions[0];
         matches.push({
           id: r.id,
           profileVersion: r.profile_version,
@@ -445,8 +489,12 @@ export function createApiRouter(): Router {
           recommendation: analysis.recommendation,
           createdAt: r.created_at,
           hasTailoredCv: Boolean(tailored),
+          tailoredCvCount: versions.length,
           tailoredScore: tailored?.grade_json
             ? (JSON.parse(tailored.grade_json).score as number)
+            : null,
+          tailoredLabel: tailored?.grade_json
+            ? String(JSON.parse(tailored.grade_json).label || "")
             : null,
         });
       }
@@ -464,7 +512,8 @@ export function createApiRouter(): Router {
         res.status(404).json({ error: "Match not found." });
         return;
       }
-      const tailored = await getTailoredCv(id);
+      const versions = await listTailoredCvs(id);
+      const tailored = versions[0];
       res.json({
         id: row.id,
         profileVersion: row.profile_version,
@@ -473,17 +522,8 @@ export function createApiRouter(): Router {
         createdAt: row.created_at,
         analysis: JSON.parse(row.analysis_json),
         rawInput: row.raw_input,
-        tailored: tailored
-          ? {
-              id: tailored.id,
-              diff: JSON.parse(tailored.diff_json),
-              grade: tailored.grade_json ? JSON.parse(tailored.grade_json) : null,
-              // Documents are rendered on request, so they are available whenever the content is.
-              hasDocx: Boolean(tailored.cv_json),
-              hasPdf: Boolean(tailored.cv_json),
-              createdAt: tailored.created_at,
-            }
-          : null,
+        tailored: tailored ? toTailoredPayload(tailored) : null,
+        versions: versions.map(toTailoredPayload),
       });
     } catch (err) {
       next(err);
@@ -551,12 +591,7 @@ export function createApiRouter(): Router {
           baselineScore: Number(analysis.score) || 0,
           github: generated.github,
         });
-        saved = await saveTailoredCv({
-          analysisId: id,
-          diff: generated.diff,
-          grade,
-          cv: generated.cv,
-        });
+        saved = (await updateTailoredCvGrade(saved.id, grade)) ?? saved;
       } catch (err) {
         gradeError = err instanceof Error ? err.message : "Grading failed";
       }
@@ -566,10 +601,12 @@ export function createApiRouter(): Router {
         diff: generated.diff,
         grade,
         gradeError,
+        agent: generated.agent,
         downloads: {
           docx: `/api/matches/${id}/cv/docx`,
           pdf: `/api/matches/${id}/cv/pdf`,
         },
+        tailored: toTailoredPayload(saved),
         createdAt: saved.created_at,
       });
     } catch (err) {
@@ -604,52 +641,75 @@ export function createApiRouter(): Router {
         baselineScore: Number(analysis.score) || 0,
         github,
       });
-      await saveTailoredCv({
-        analysisId: id,
-        diff: JSON.parse(tailored.diff_json),
-        grade,
-        cv: JSON.parse(tailored.cv_json),
-      });
+      await updateTailoredCvGrade(tailored.id, grade);
       res.json({ analysisId: id, grade });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : "Grading failed" });
     }
   });
 
+  router.get("/matches/:id/cvs/:cvId/:format", async (req, res, next) => {
+    try {
+      const cvId = Number(req.params.cvId);
+      const tailored = await getTailoredCvById(cvId);
+      if (!tailored || tailored.analysis_id !== Number(req.params.id)) {
+        res.status(404).json({ error: "No tailored CV for this match." });
+        return;
+      }
+      await sendTailoredDownload(req, res, tailored);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get("/matches/:id/cv/:format", async (req, res, next) => {
     try {
-      const id = Number(req.params.id);
-      const wantsPdf = req.params.format === "pdf";
-      const tailored = await getTailoredCv(id);
+      const tailored = await getTailoredCv(Number(req.params.id));
       if (!tailored) {
         res.status(404).json({ error: "No tailored CV for this match." });
         return;
       }
-      if (!tailored.cv_json) {
-        res.status(409).json({
-          error: "This tailored CV was saved by an older version. Regenerate it to download.",
-        });
-        return;
-      }
-
-      const cv = withGithubLink(JSON.parse(tailored.cv_json) as TailoredCvDoc, (await getProfile())?.profile ?? emptyProfile());
-      const buffer = wantsPdf ? await renderPdf(cv) : await renderDocx(cv);
-      res.setHeader("Cache-Control", "no-store");
-      res.setHeader(
-        "Content-Type",
-        wantsPdf
-          ? "application/pdf"
-          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-      );
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="CareerFit-tailored-${id}.${wantsPdf ? "pdf" : "docx"}"`
-      );
-      res.send(buffer);
+      await sendTailoredDownload(req, res, tailored);
     } catch (err) {
       next(err);
     }
   });
 
   return router;
+}
+
+async function sendTailoredDownload(
+  req: import("express").Request,
+  res: import("express").Response,
+  tailored: TailoredCvRow
+): Promise<void> {
+  const wantsPdf = req.params.format === "pdf";
+  if (!wantsPdf && req.params.format !== "docx") {
+    res.status(404).json({ error: "Use pdf or docx." });
+    return;
+  }
+  if (!tailored.cv_json) {
+    res.status(409).json({
+      error: "This tailored CV was saved by an older version. Regenerate it to download.",
+    });
+    return;
+  }
+
+  const cv = withGithubLink(
+    JSON.parse(tailored.cv_json) as TailoredCvDoc,
+    (await getProfile())?.profile ?? emptyProfile()
+  );
+  const buffer = wantsPdf ? await renderPdf(cv) : await renderDocx(cv);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader(
+    "Content-Type",
+    wantsPdf
+      ? "application/pdf"
+      : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="CareerFit-tailored-${tailored.analysis_id}-${tailored.id}.${wantsPdf ? "pdf" : "docx"}"`
+  );
+  res.send(buffer);
 }
