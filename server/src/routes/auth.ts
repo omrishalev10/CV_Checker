@@ -91,7 +91,10 @@ export function createAuthRouter(): Router {
         return;
       }
 
-      const username = String(req.body?.username || "");
+      const username =
+        String(req.body?.username || "").trim() ||
+        process.env.OWNER_USERNAME?.trim() ||
+        "omri";
       const password = String(req.body?.password || "");
       const user = await findUserByUsername(username);
       if (!user || !passwordMatches(user.password_hash, password)) {

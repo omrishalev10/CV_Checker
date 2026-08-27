@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { api, onAuthRequired } from "../api";
+import BrandMark from "./BrandMark";
 
 interface AuthContextValue {
   enabled: boolean;
@@ -69,7 +70,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   if (loading) {
     return (
       <div className="lock-screen">
-        <p className="muted">Loading…</p>
+        <div className="lock-brand">
+          <BrandMark size={36} />
+          <p className="muted">Opening your studio…</p>
+        </div>
       </div>
     );
   }
@@ -78,7 +82,13 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     return (
       <div className="lock-screen">
         <div className="lock-card stack">
-          <h1>Can't reach CareerFit</h1>
+          <div className="lock-brand">
+            <BrandMark size={36} />
+            <h1 className="brand" style={{ margin: 0 }}>
+              Career<span>Fit</span>
+            </h1>
+          </div>
+          <h2>Can&apos;t reach the server</h2>
           <div className="error">{statusError}</div>
           <button className="btn btn-primary" onClick={() => refresh()}>
             Retry
@@ -141,13 +151,16 @@ function AccountScreen({ onUnlocked }: { onUnlocked: () => Promise<void> }) {
     <div className="lock-screen">
       <form className="lock-card stack" onSubmit={onSubmit}>
         <div>
-          <h1 className="brand">
-            Career<span>Fit</span>
-          </h1>
+          <div className="lock-brand">
+            <BrandMark size={40} />
+            <h1 className="brand" style={{ margin: 0 }}>
+              Career<span>Fit</span>
+            </h1>
+          </div>
           <p className="lede">
             {mode === "login"
-              ? "Sign in to your account. Your CVs and job matches stay private to you."
-              : "Create a free account. You will add your own AI key in Settings."}
+              ? "Sign in to your private studio. Your profile, jobs, and AI key stay on this account."
+              : "Create an account. You will add your own AI key in Settings — it is never shared."}
           </p>
         </div>
 

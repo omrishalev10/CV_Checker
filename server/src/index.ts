@@ -36,10 +36,19 @@ app.use("/api/auth", createAuthRouter());
 app.use("/api", requireAuth, createApiRouter());
 
 const webDist = path.resolve(root, "web", "dist");
-app.use(express.static(webDist));
+app.use(
+  express.static(webDist, {
+    setHeaders(res, filePath) {
+      if (/\.(html|js)$/i.test(filePath) && /index\.html|sw\.js|registerSW\.js$/i.test(filePath)) {
+        res.setHeader("Cache-Control", "no-store");
+      }
+    },
+  })
+);
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api")) return next();
   const index = path.join(webDist, "index.html");
+  res.setHeader("Cache-Control", "no-store");
   res.sendFile(index, (err) => {
     if (err) next();
   });

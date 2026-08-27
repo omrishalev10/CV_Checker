@@ -37,6 +37,7 @@ export default function HistoryPage() {
   return (
     <section className="stack">
       <div>
+        <p className="kicker">History</p>
         <h1>My jobs</h1>
         <p className="lede">Jobs you already checked, with scores and any tailored CVs.</p>
       </div>
@@ -44,12 +45,23 @@ export default function HistoryPage() {
       {info && <div className="success">{info}</div>}
       <div className="panel">
         {matches.length === 0 ? (
-          <p className="muted">No jobs yet. Check a job to see it here.</p>
+          <div className="empty-state stack">
+            <p className="kicker">Nothing here yet</p>
+            <h2>Check a role to start a history.</h2>
+            <p className="muted">
+              Scores, gaps, and tailored CVs will live here so you can compare without hunting through files.
+            </p>
+            <div className="row" style={{ justifyContent: "center" }}>
+              <Link className="btn btn-primary" to="/match">
+                Check a job
+              </Link>
+            </div>
+          </div>
         ) : (
           matches.map((m) => (
             <div className="history-row" key={m.id}>
               <Link to={`/history/${m.id}`} className="history-item">
-                <div className="row" style={{ justifyContent: "space-between" }}>
+                <div className="row spread">
                   <strong className="title">
                     {m.jobTitle || "Untitled role"}
                     {m.company ? ` · ${m.company}` : ""}

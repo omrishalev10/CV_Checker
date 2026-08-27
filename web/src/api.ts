@@ -147,6 +147,22 @@ async function parseJson(res: Response) {
   return res.json();
 }
 
+async function fetchJson(url: string, init?: RequestInit, timeoutMs = 20_000) {
+  const ctrl = new AbortController();
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    return await parseJson(res);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("The analysis took too long. Try again, or paste a shorter job description.");
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function filenameFromDisposition(header: string | null): string | null {
   if (!header) return null;
   const star = header.match(/filename\*=UTF-8''([^;]+)/i);
@@ -204,26 +220,34 @@ export const api = {
       body: JSON.stringify({ profile }),
     }).then(parseJson),
   matchText: (text: string) =>
-    fetch("/api/match/text", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    }).then(parseJson),
+    fetchJson(
+      "/api/match/text",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      },
+      90_000
+    ),
   matchUrl: (url: string) =>
-    fetch("/api/match/url", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-    }).then(parseJson),
+    fetchJson(
+      "/api/match/url",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      },
+      90_000
+    ),
   matchImage: (file: File) => {
     const fd = new FormData();
     fd.append("image", file);
-    return fetch("/api/match/image", { method: "POST", body: fd }).then(parseJson);
+    return fetchJson("/api/match/image", { method: "POST", body: fd }, 90_000);
   },
   listMatches: () => fetch("/api/matches").then(parseJson),
   getMatch: (id: number) => fetch(`/api/matches/${id}`).then(parseJson),
-  tailor: (id: number) => fetch(`/api/matches/${id}/tailor`, { method: "POST" }).then(parseJson),
-  gradeCv: (id: number) => fetch(`/api/matches/${id}/grade`, { method: "POST" }).then(parseJson),
+  tailor: (id: number) => fetchJson(`/api/matches/${id}/tailor`, { method: "POST" }, 90_000),
+  gradeCv: (id: number) => fetchJson(`/api/matches/${id}/grade`, { method: "POST" }, 90_000),
   deleteMatch: (id: number) => fetch(`/api/matches/${id}`, { method: "DELETE" }).then(parseJson),
   getSettings: () => fetch("/api/settings").then(parseJson),
   saveApiKey: (apiKey: string) =>
@@ -260,12 +284,19 @@ export const api = {
       body: JSON.stringify({ url }),
     }).then(parseJson),
   listFiles: () => fetch("/api/profile/files").then(parseJson),
-  uploadFile: (file: File) => {
+  uploadFile: (file: File, asMain = false) => {
     const fd = new FormData();
     fd.append("file", file);
+    if (asMain) fd.append("main", "1");
     return fetch("/api/profile/files", { method: "POST", body: fd }).then(parseJson);
   },
   deleteFile: (id: number) => fetch(`/api/profile/files/${id}`, { method: "DELETE" }).then(parseJson),
+  setMainCv: (id: number | null) =>
+    fetch("/api/profile/main-cv", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).then(parseJson),
   applyFiles: (ids: number[]) =>
     fetch("/api/profile/files/apply", {
       method: "POST",

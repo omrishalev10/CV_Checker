@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import FileDrop from "../components/FileDrop";
 
 type Mode = "text" | "image" | "url";
 
@@ -52,10 +53,11 @@ export default function MatchPage() {
   return (
     <section className="stack">
       <div>
+        <p className="kicker">Fit check</p>
         <h1>Check a job</h1>
         <p className="lede">
-          Paste text, upload a screenshot, or give a URL. CareerFit scores fit against your current skill
-          profile.
+          Paste text, drop a screenshot, or give a URL. CareerFit scores fit against your current skill
+          profile — honestly.
         </p>
       </div>
 
@@ -76,7 +78,7 @@ export default function MatchPage() {
       {busy && (
         <div className="loading-banner">
           <span className="spinner" />
-          Analyzing with AI…
+          Analyzing with AI — usually 10–30 seconds.
         </div>
       )}
       {error && <div className="error">{error}</div>}
@@ -95,16 +97,14 @@ export default function MatchPage() {
 
       {mode === "image" && (
         <div className="panel stack">
-          <label className="field">
-            Screenshot (JPEG, PNG, GIF, WebP) — works from phone camera/gallery
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
-              capture="environment"
-              disabled={busy}
-              onChange={(e) => onImage(e.target.files?.[0] || null)}
-            />
-          </label>
+          <FileDrop
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            capture
+            disabled={busy}
+            label="Drop a screenshot, or take one"
+            hint="JPEG, PNG, GIF, or WebP — camera and gallery both work"
+            onFile={(file) => onImage(file)}
+          />
         </div>
       )}
 

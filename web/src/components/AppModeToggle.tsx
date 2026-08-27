@@ -21,7 +21,7 @@ function isIos(): boolean {
   return /iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
-export default function AppModeToggle() {
+export default function AppModeToggle({ variant = "button" }: { variant?: "button" | "menu" }) {
   const [mode, setMode] = useState<Mode>(detectMode);
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -65,52 +65,73 @@ export default function AppModeToggle() {
   }
 
   if (mode === "desktop-shell") {
-    return <span className="mode-chip">Desktop app</span>;
+    return variant === "menu" ? (
+      <div className="menu-item is-static">Desktop app</div>
+    ) : (
+      <span className="mode-chip">Desktop app</span>
+    );
   }
 
   if (mode === "installed") {
-    return (
-      <div className="mode-toggle">
-        <button className="mode-btn" onClick={onOpenInBrowser} title="Open CareerFit in a browser tab">
-          Use in browser
+    const control = (
+      <button
+        type="button"
+        className={variant === "menu" ? "menu-item" : "mode-btn"}
+        onClick={onOpenInBrowser}
+        role={variant === "menu" ? "menuitem" : undefined}
+      >
+        Open in browser
+      </button>
+    );
+    return variant === "menu" ? control : <div className="mode-toggle">{control}</div>;
+  }
+
+  const help = showHelp && !installEvent && (
+    <div className={variant === "menu" ? "menu-help" : "mode-help panel"}>
+      <strong>Install CareerFit</strong>
+      {isIos() ? (
+        <p className="muted">
+          On iPhone or iPad: tap Share, then <em>Add to Home Screen</em>.
+        </p>
+      ) : (
+        <p className="muted">
+          Look for the install icon in the address bar, or open the browser menu and choose{" "}
+          <em>Install CareerFit</em>. Firefox cannot install web apps.
+        </p>
+      )}
+      {variant !== "menu" && (
+        <button type="button" className="btn btn-ghost" onClick={() => setShowHelp(false)}>
+          Close
         </button>
-      </div>
+      )}
+    </div>
+  );
+
+  const control = (
+    <button
+      type="button"
+      className={variant === "menu" ? "menu-item" : "mode-btn"}
+      onClick={onInstall}
+      aria-expanded={showHelp}
+      role={variant === "menu" ? "menuitem" : undefined}
+    >
+      {installEvent ? "Install app" : "Install on this device"}
+    </button>
+  );
+
+  if (variant === "menu") {
+    return (
+      <>
+        {control}
+        {help}
+      </>
     );
   }
 
   return (
     <div className="mode-toggle">
-      <button
-        className="mode-btn"
-        onClick={onInstall}
-        aria-expanded={showHelp}
-        title="Install CareerFit as a desktop app"
-      >
-        {installEvent ? "Install app" : "Install app…"}
-      </button>
-      {showHelp && !installEvent && (
-        <div className="mode-help panel">
-          <strong>Installing from this browser</strong>
-          {isIos() ? (
-            <p className="muted">
-              On iPhone/iPad: tap the Share button, then <em>Add to Home Screen</em>.
-            </p>
-          ) : (
-            <p className="muted">
-              Look for the install icon in the address bar (Chrome or Edge), or open the browser menu and
-              choose <em>Install CareerFit</em>. Firefox does not support installing web apps.
-            </p>
-          )}
-          <p className="muted">
-            Install needs the production build over <code>localhost</code> or HTTPS — open{" "}
-            <code>http://localhost:3001</code> after running <code>npm start</code>.
-          </p>
-          <p className="muted">To go back to web-only, uninstall the app from your OS or browser.</p>
-          <button className="btn btn-ghost" onClick={() => setShowHelp(false)}>
-            Close
-          </button>
-        </div>
-      )}
+      {control}
+      {help}
     </div>
   );
 }

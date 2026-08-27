@@ -122,11 +122,11 @@ export default function MatchDetailPage() {
 
   return (
     <section className="stack">
-      <div className="row" style={{ justifyContent: "space-between" }}>
+      <div className="match-hero">
         <div>
-          <p className="muted" style={{ margin: 0 }}>
-            <Link to="/history">← My jobs</Link>
-          </p>
+          <Link className="back-link" to="/history">
+            ← My jobs
+          </Link>
           <h1>
             {analysis.jobTitle || "Job match"}
             {analysis.company ? ` · ${analysis.company}` : ""}
@@ -138,16 +138,19 @@ export default function MatchDetailPage() {
             </p>
           )}
         </div>
-        <div className="score-ring" style={{ ["--p" as string]: analysis.score }}>
-          <strong>{analysis.score}</strong>
+        <div className="score-mark">
+          <div
+            className={`score-ring ${analysis.label.toLowerCase()}`}
+            style={{ ["--p" as string]: analysis.score }}
+          >
+            <strong>{analysis.score}</strong>
+          </div>
+          <span className={`badge ${analysis.label.toLowerCase()}`}>{analysis.label} fit</span>
         </div>
       </div>
 
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <div className="row">
-          <span className={`badge ${analysis.label.toLowerCase()}`}>{analysis.label} fit</span>
-          <strong>{analysis.recommendation}</strong>
-        </div>
+      <div className="row spread">
+        <p className="verdict">{analysis.recommendation}</p>
         <div className="history-actions">
           {confirmDelete ? (
             <>
@@ -177,6 +180,7 @@ export default function MatchDetailPage() {
 
       <div className="grid-2">
         <div className="panel stack">
+          <p className="kicker">Evidence</p>
           <h2>Why this score</h2>
           <p>{analysis.explanation}</p>
           <h3>Matched</h3>
@@ -187,6 +191,7 @@ export default function MatchDetailPage() {
           </ul>
         </div>
         <div className="panel stack">
+          <p className="kicker">Honesty</p>
           <h2>Gaps</h2>
           <h3>Hard requirements missing</h3>
           <ul className="list">
@@ -208,10 +213,11 @@ export default function MatchDetailPage() {
       </div>
 
       <div className="panel stack">
+        <p className="kicker">Next move</p>
         <h2>Tailored CV</h2>
         <p className="muted">
           Reorders, expands real strengths, and can add matching public GitHub projects.
-          Gaps stay honest — missing requirements are not invented, and real jobs are not dropped to hide them.
+          Starts from your main CV when one is set on Profile. Gaps stay honest.
         </p>
         <div className="row">
           <button className="btn btn-primary" onClick={onTailor} disabled={busy}>
@@ -278,14 +284,14 @@ function GradeCard({ grade }: { grade: TailoredCvGrade }) {
 
   return (
     <div className="stack" style={{ borderTop: "1px solid var(--line)", paddingTop: "1rem" }}>
-      <div className="row" style={{ justifyContent: "space-between" }}>
+      <div className="row spread">
         <div>
           <h3 style={{ margin: 0 }}>Tailored CV grade</h3>
           <p className="muted" style={{ margin: 0 }}>
             Base profile scored {grade.baselineScore} · tailored CV scores {grade.score} ({deltaText})
           </p>
         </div>
-        <div className="score-ring" style={{ ["--p" as string]: grade.score }}>
+        <div className={`score-ring ${grade.label.toLowerCase()}`} style={{ ["--p" as string]: grade.score }}>
           <strong>{grade.score}</strong>
         </div>
       </div>

@@ -4,6 +4,7 @@ import {
   deleteAnalysis,
   deleteProfileFile,
   getAnalysis,
+  getMainCvFile,
   getProfile,
   getProfileFile,
   getTailoredCv,
@@ -13,6 +14,7 @@ import {
   listProfileFiles,
   saveProfile,
   saveTailoredCv,
+  setMainCvFileId,
 } from "../db.js";
 import { extractTextFromBuffer } from "../services/cvParse.js";
 import {
@@ -91,11 +93,12 @@ export function createApiRouter(): Router {
   router.get("/profile", async (_req, res, next) => {
     try {
       const current = await getProfile();
+      const mainCv = await getMainCvFile();
       if (!current) {
-        res.json({ version: 0, profile: emptyProfile(), exists: false });
+        res.json({ version: 0, profile: emptyProfile(), exists: false, mainCv });
         return;
       }
-      res.json({ ...current, exists: true });
+      res.json({ ...current, exists: true, mainCv });
     } catch (err) {
       next(err);
     }
@@ -128,9 +131,25 @@ export function createApiRouter(): Router {
 
   router.get("/profile/files", async (_req, res, next) => {
     try {
-      res.json({ files: await listProfileFiles() });
+      res.json({ files: await listProfileFiles(), mainCv: await getMainCvFile() });
     } catch (err) {
       next(err);
+    }
+  });
+
+  router.put("/profile/main-cv", async (req, res, next) => {
+    try {
+      const raw = req.body?.id;
+      const id = raw === null || raw === "" ? null : Number(raw);
+      if (id !== null && !Number.isInteger(id)) {
+        res.status(400).json({ error: "id is required." });
+        return;
+      }
+      const mainCv = await setMainCvFileId(id);
+      res.json({ mainCv });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not set main CV.";
+      res.status(400).json({ error: message });
     }
   });
 
@@ -145,7 +164,11 @@ export function createApiRouter(): Router {
         mime: req.file.mimetype || null,
         content: new Uint8Array(req.file.buffer),
       });
-      res.json(saved);
+      const asMain = String(req.body?.main || req.query.main || "") === "1" || String(req.body?.main || "") === "true";
+      if (asMain || !(await getMainCvFile())) {
+        await setMainCvFileId(saved.id);
+      }
+      res.json({ ...saved, mainCv: await getMainCvFile() });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : "File upload failed" });
     }
@@ -332,6 +355,7 @@ export function createApiRouter(): Router {
         res.status(400).json({ error: "Paste a fuller job description." });
         return;
       }
+      console.log(`match/text ${text.length} chars`);
       const analysis = await analyzeJobMatch(current.profile, text, { source: "pasted text" });
       const row = await insertAnalysis({
         profileVersion: current.version,
@@ -499,7 +523,16 @@ export function createApiRouter(): Router {
       }
       const analysis = JSON.parse(row.analysis_json);
       const jobText = row.raw_input || analysis.extractedText || "";
-      const generated = await generateTailoredCvContent(current.profile, analysis, jobText);
+      let baseCvText: string | null = null;
+      const mainCv = await getMainCvFile();
+      if (mainCv) {
+        const file = await getProfileFile(mainCv.id);
+        if (file) {
+          const text = await extractTextFromBuffer(Buffer.from(file.content), file.filename, file.mime || "");
+          if (text.trim().length >= 40) baseCvText = text;
+        }
+      }
+      const generated = await generateTailoredCvContent(current.profile, analysis, jobText, baseCvText);
 
       // Persist the CV before grading so a grading failure never loses the generated content.
       let saved = await saveTailoredCv({

@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import type {
   MatchAnalysis,
   ProfileDiff,
@@ -14,11 +14,13 @@ import {
   humanizeAiError,
   isModelMissingError,
   isRetryableAiError,
+  isTimeoutError,
   sleep,
 } from "./aiErrors.js";
 import { parseJsonLoose } from "./jsonParse.js";
 
-const GEMINI_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
+const GEMINI_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"];
+const GEMINI_ATTEMPT_MS = 25_000;
 
 function geminiModelChain(): string[] {
   const primary = getModel();
@@ -55,7 +57,7 @@ async function getAnthropic(): Promise<Anthropic> {
   const key = await requireKey();
   let client = anthropicByKey.get(key);
   if (!client) {
-    client = new Anthropic({ apiKey: key });
+    client = new Anthropic({ apiKey: key, timeout: GEMINI_ATTEMPT_MS });
     anthropicByKey.set(key, client);
   }
   return client;
@@ -70,6 +72,13 @@ type TextOrVision =
 
 interface CompleteOptions {
   temperature?: number;
+  maxOutputTokens?: number;
+}
+
+function thinkingConfigFor(model: string): { thinkingLevel: ThinkingLevel } | { thinkingBudget: number } | undefined {
+  if (/gemini-3/i.test(model)) return { thinkingLevel: ThinkingLevel.MINIMAL };
+  if (/gemini-2\.5/i.test(model)) return { thinkingBudget: 0 };
+  return undefined;
 }
 
 async function completeJsonGemini<T>(
@@ -90,10 +99,12 @@ async function completeJsonGemini<T>(
   const models = geminiModelChain();
   let lastError: unknown;
 
-  for (let m = 0; m < models.length; m++) {
-    const model = models[m];
-    for (let attempt = 0; attempt < 2; attempt++) {
+  for (const model of models) {
+    const retries = 2;
+    for (let attempt = 0; attempt < retries; attempt++) {
       try {
+        const thinkingConfig = thinkingConfigFor(model);
+        console.log(`[ai] ${model} attempt ${attempt + 1}`);
         const response = await (await getGemini()).models.generateContent({
           model,
           contents,
@@ -101,7 +112,9 @@ async function completeJsonGemini<T>(
             systemInstruction: `${system}\n\nRespond with valid JSON only. No markdown fences, no commentary.`,
             responseMimeType: "application/json",
             temperature: opts.temperature ?? 0.2,
-            maxOutputTokens: 32768,
+            maxOutputTokens: opts.maxOutputTokens ?? 8192,
+            abortSignal: AbortSignal.timeout(GEMINI_ATTEMPT_MS),
+            ...(thinkingConfig ? { thinkingConfig } : {}),
           },
         });
 
@@ -116,6 +129,10 @@ async function completeJsonGemini<T>(
         return parseJsonLoose<T>(text);
       } catch (err) {
         lastError = err;
+        if (isTimeoutError(err)) {
+          console.warn(`[ai] ${model} timed out`);
+          break;
+        }
         if (isModelMissingError(err)) break;
         if (!isRetryableAiError(err)) throw humanizeAiError(err);
         if (attempt === 0) {
@@ -265,7 +282,7 @@ Return JSON:
 }
 recommendation should be one short direct verdict like "Strong match, worth applying" / "Stretch role, apply if interested in growth" / "Not a good fit right now".
 extractedText should be the cleaned job description text you analyzed.`,
-    `Candidate Skill Profile:\n${JSON.stringify(profile, null, 2)}\n\nJob description${meta?.source ? ` (source: ${meta.source})` : ""}:\n${jobText.slice(0, 80000)}`
+    `Candidate Skill Profile:\n${JSON.stringify(profile, null, 2)}\n\nJob description${meta?.source ? ` (source: ${meta.source})` : ""}:\n${jobText.slice(0, 24000)}`
   );
 
   const score = Math.max(0, Math.min(100, Math.round(Number(result.score) || 0)));
@@ -352,8 +369,8 @@ Return JSON:
 explanation: 1-3 sentences, direct, no cheerleading.
 keywordsMissing: job keywords absent from the CV because the candidate genuinely lacks them.
 atsIssues: structural problems an ATS parser could trip on (empty array if none).`,
-    `Skill Profile:\n${JSON.stringify(input.profile, null, 2)}\n\nGitHub evidence:\n${JSON.stringify(input.github ?? { note: "not fetched" }, null, 2)}\n\nTailored CV:\n${JSON.stringify(input.cv, null, 2)}\n\nJob description:\n${input.jobText.slice(0, 60000)}`,
-    { temperature: 0 }
+    `Skill Profile:\n${JSON.stringify(input.profile, null, 2)}\n\nGitHub evidence:\n${JSON.stringify(input.github ?? { note: "not fetched" }, null, 2)}\n\nTailored CV:\n${JSON.stringify(input.cv, null, 2)}\n\nJob description:\n${input.jobText.slice(0, 24000)}`,
+    { temperature: 0, maxOutputTokens: 8192 }
   );
 
   const score = Math.max(0, Math.min(100, Math.round(Number(result.score) || 0)));
@@ -374,7 +391,8 @@ atsIssues: structural problems an ATS parser could trip on (empty array if none)
 export async function generateTailoredCvContent(
   profile: SkillProfile,
   analysis: MatchAnalysis,
-  jobText: string
+  jobText: string,
+  baseCvText?: string | null
 ): Promise<{
   cv: {
     name?: string;
@@ -433,6 +451,7 @@ HARD RULES:
 - Prefer single-column, plain sections suitable for ATS parsers.
 - Keyword skills list may only include skills the candidate actually has.
 - ALWAYS put the candidate's GitHub profile URL in cv.links (https://github.com/<username> from the Skill Profile / GitHub evidence). Do not omit it. Other real profile links (LinkedIn, portfolio) may be included too.
+- If a Base CV document is provided, start from that document. Keep its wording, bullets, and section shape unless a change is needed for this job. Skill Profile is the fact-check; do not invent facts that are in neither source.
 
 EXPAND, DO NOT SHRINK:
 - Keep EVERY employment role from the Skill Profile. Do not drop older or less-related jobs to make gaps look smaller.
@@ -469,7 +488,8 @@ Return JSON:
 In diff.changes, mention expansions (stronger bullets, reordering, which GitHub projects were added).
 In diff.notAdded, list job requirements you deliberately did NOT claim because they are absent from the profile and GitHub evidence.
 If fit is low, set warning explaining gaps remain and were not fabricated — the CV was expanded on real strengths instead.`,
-    `Skill Profile:\n${JSON.stringify(profile, null, 2)}\n\nMatch analysis:\n${JSON.stringify(analysis, null, 2)}\n\nGitHub evidence:\n${JSON.stringify(github, null, 2)}\n\nJob text:\n${jobText.slice(0, 60000)}`
+    `Skill Profile:\n${JSON.stringify(profile, null, 2)}\n\nMatch analysis:\n${JSON.stringify(analysis, null, 2)}\n\nGitHub evidence:\n${JSON.stringify(github, null, 2)}\n\nBase CV document (start from this; empty if none):\n${(baseCvText || "").slice(0, 24000) || "(none — use the Skill Profile only)"}\n\nJob text:\n${jobText.slice(0, 24000)}`,
+    { maxOutputTokens: 16384 }
   );
 
   const projects = Array.isArray(generated.cv.projects) ? generated.cv.projects : [];

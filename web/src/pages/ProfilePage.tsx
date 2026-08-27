@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, ProfileDiff, Skill, SkillProfile } from "../api";
 import { downloadFromApi } from "../download";
+import FileDrop from "../components/FileDrop";
 
 function githubUrlFromProfile(profile: SkillProfile | null): string {
   if (!profile?.links) return "";
@@ -48,10 +49,9 @@ export default function ProfilePage() {
   const [summary, setSummary] = useState("");
   const [skills, setSkills] = useState<SkillDraft[]>([]);
   const [files, setFiles] = useState<ProfileFile[]>([]);
+  const [mainCv, setMainCv] = useState<ProfileFile | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
-  const [showEdit, setShowEdit] = useState(false);
   const [showMore, setShowMore] = useState(false);
-  const [editJson, setEditJson] = useState("");
   const [paste, setPaste] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatPreview, setChatPreview] = useState<{ preview: SkillProfile; diff: ProfileDiff } | null>(
@@ -70,9 +70,9 @@ export default function ProfilePage() {
     setGithub(githubUrlFromProfile(data.profile));
     setSummary(data.profile?.summary || "");
     setSkills(toDrafts(data.profile?.skills || []));
-    setEditJson(JSON.stringify(data.profile, null, 2));
     const listed = await api.listFiles();
     setFiles(listed.files || []);
+    setMainCv(data.mainCv || listed.mainCv || null);
   }
 
   useEffect(() => {
@@ -121,12 +121,37 @@ export default function ProfilePage() {
     });
   }
 
-  async function onUploadFile(file: File | null) {
+  async function onUploadFile(file: File | null, asMain = false) {
     if (!file) return;
     await run(async () => {
-      await api.uploadFile(file);
+      await api.uploadFile(file, asMain);
       await refresh();
-      setOk(`Saved “${file.name}” to your files.`);
+      setOk(asMain ? `“${file.name}” is now your main CV.` : `Saved “${file.name}” to your files.`);
+    });
+  }
+
+  async function onSetMainCv(id: number) {
+    await run(async () => {
+      await api.setMainCv(id);
+      await refresh();
+      setOk("Main CV updated. Tailored CVs will start from this file.");
+    });
+  }
+
+  async function onUpdateFromMain() {
+    if (!mainCv) return;
+    await run(async () => {
+      const data = await api.applyFiles([mainCv.id]);
+      setLastDiff({
+        added: [],
+        updated: [],
+        removed: [],
+        summary: (data.diffs || [])
+          .map((d: { filename: string; summary: string }) => `${d.filename}: ${d.summary}`)
+          .join(" "),
+      });
+      await refresh();
+      setOk("Skill profile updated from your main CV.");
     });
   }
 
@@ -174,16 +199,6 @@ export default function ProfilePage() {
     });
   }
 
-  async function onSaveJson(e: FormEvent) {
-    e.preventDefault();
-    await run(async () => {
-      const parsed = JSON.parse(editJson) as SkillProfile;
-      await api.saveProfile(parsed);
-      await refresh();
-      setOk("Profile saved.");
-    });
-  }
-
   async function onChat(e: FormEvent) {
     e.preventDefault();
     await run(async () => {
@@ -207,11 +222,12 @@ export default function ProfilePage() {
   return (
     <section className="stack">
       <div>
+        <p className="kicker">Skill profile</p>
         <h1>Profile</h1>
         <p className="lede">
           {exists
-            ? `Version ${version}. Files, GitHub, summary and skills live here — this is what job matching uses.`
-            : "Add a GitHub link and files, then build your profile from them or paste a CV."}
+            ? `Version ${version}. Your main CV is the starting point for tailored versions. Summary and skills are what job matching uses.`
+            : "Upload your main CV, add GitHub, then check a job."}
         </p>
       </div>
 
@@ -224,6 +240,63 @@ export default function ProfilePage() {
       {error && <div className="error">{error}</div>}
       {ok && <div className="success">{ok}</div>}
       {lastDiff?.summary && <DiffView diff={lastDiff} />}
+
+      <div className="panel stack main-cv">
+        <p className="kicker">Source file</p>
+        <h2>Main CV</h2>
+        <p className="muted">
+          This is the CV tailored versions start from. Keep it as your current general CV, then generate a
+          job-specific version from a match.
+        </p>
+        {mainCv ? (
+          <>
+            <p className="main-cv-name">
+              <strong>{mainCv.filename}</strong>
+              <span className="muted">
+                {" "}
+                · {formatBytes(mainCv.size)} · {new Date(mainCv.createdAt).toLocaleString()}
+              </span>
+            </p>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={onUpdateFromMain}
+                disabled={busy}
+              >
+                Update profile from this CV
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() =>
+                  downloadFromApi(`/api/profile/files/${mainCv.id}`, mainCv.filename).catch((e) =>
+                    setError(e instanceof Error ? e.message : "Download failed")
+                  )
+                }
+                disabled={busy}
+              >
+                Download
+              </button>
+            </div>
+            <FileDrop
+              accept=".pdf,.docx,.txt,application/pdf,text/plain"
+              disabled={busy}
+              label="Replace main CV"
+              hint="Drop a new PDF, DOCX, or TXT — or tap to choose"
+              onFile={(file) => onUploadFile(file, true)}
+            />
+          </>
+        ) : (
+          <FileDrop
+            accept=".pdf,.docx,.txt,application/pdf,text/plain"
+            disabled={busy}
+            label="Drop your current CV"
+            hint="PDF, DOCX, or TXT — or tap to choose"
+            onFile={(file) => onUploadFile(file, true)}
+          />
+        )}
+      </div>
 
       <form className="panel stack" onSubmit={onSaveGithub}>
         <h2>GitHub</h2>
@@ -244,22 +317,15 @@ export default function ProfilePage() {
       </form>
 
       <div className="panel stack">
-        <h2>My files</h2>
-        <p className="muted">
-          Store CVs you built yourself, then tick one or more and update the skill profile from them.
-        </p>
-        <label className="field">
-          Add a file (PDF, DOCX, or TXT)
-          <input
-            type="file"
-            accept=".pdf,.docx,.txt,application/pdf,text/plain"
-            onChange={(e) => {
-              onUploadFile(e.target.files?.[0] || null);
-              e.target.value = "";
-            }}
-            disabled={busy}
-          />
-        </label>
+        <h2>Other files</h2>
+        <p className="muted">Certificates, extra CVs, or notes. Set one as the main CV if you want to switch.</p>
+        <FileDrop
+          accept=".pdf,.docx,.txt,application/pdf,text/plain"
+          disabled={busy}
+          label="Add a file"
+          hint="Certificates, extra CVs, or notes — PDF, DOCX, or TXT"
+          onFile={(file) => onUploadFile(file)}
+        />
         {files.length === 0 ? (
           <p className="muted">No files yet.</p>
         ) : (
@@ -275,6 +341,7 @@ export default function ProfilePage() {
                   />
                   <span>
                     <strong>{f.filename}</strong>
+                    {mainCv?.id === f.id ? <span className="badge strong"> Main</span> : null}
                     <span className="muted">
                       {" "}
                       · {formatBytes(f.size)} · {new Date(f.createdAt).toLocaleString()}
@@ -282,6 +349,16 @@ export default function ProfilePage() {
                   </span>
                 </label>
                 <div className="row">
+                  {mainCv?.id !== f.id && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => onSetMainCv(f.id)}
+                      disabled={busy}
+                    >
+                      Use as main CV
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-ghost"
@@ -399,27 +476,7 @@ export default function ProfilePage() {
       </form>
 
       <div className="panel stack">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h2 style={{ margin: 0 }}>Edit everything</h2>
-          <button type="button" className="btn btn-ghost" onClick={() => setShowEdit((v) => !v)}>
-            {showEdit ? "Hide editor" : "Open editor"}
-          </button>
-        </div>
-        {showEdit && (
-          <form className="stack profile-editor" onSubmit={onSaveJson}>
-            <p className="muted">
-              Full profile as JSON — roles, education, certifications, target roles. Invalid JSON is rejected.
-            </p>
-            <textarea value={editJson} onChange={(e) => setEditJson(e.target.value)} disabled={busy} rows={18} />
-            <button className="btn btn-primary" disabled={busy}>
-              Save profile
-            </button>
-          </form>
-        )}
-      </div>
-
-      <div className="panel stack">
-        <div className="row" style={{ justifyContent: "space-between" }}>
+        <div className="row spread">
           <h2 style={{ margin: 0 }}>More ways to add info</h2>
           <button type="button" className="btn btn-ghost" onClick={() => setShowMore((v) => !v)}>
             {showMore ? "Hide" : "Show"}

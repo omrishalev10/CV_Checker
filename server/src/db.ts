@@ -9,7 +9,7 @@ import {
   userCount,
 } from "./auth.js";
 import { currentUserId } from "./context.js";
-import { copyLegacySettingsToUser, loadSettingsCache } from "./settings.js";
+import { copyLegacySettingsToUser, deleteUserSetting, getUserSetting, loadSettingsCache, setUserSetting } from "./settings.js";
 import type { MatchAnalysis, SkillProfile, TailorDiff, TailoredCvGrade } from "./types.js";
 
 export interface ProfileRow {
@@ -553,7 +553,57 @@ export async function deleteProfileFile(id: number): Promise<boolean> {
     sql: "DELETE FROM profile_files WHERE id = ? AND user_id = ?",
     args: [id, uid()],
   });
-  return Number(result.rowsAffected) > 0;
+  if (Number(result.rowsAffected) > 0) {
+    const mainId = await getMainCvFileId();
+    if (mainId === id) await setMainCvFileId(null);
+    return true;
+  }
+  return false;
+}
+
+const MAIN_CV_KEY = "main_cv_file_id";
+
+export async function getMainCvFileId(): Promise<number | null> {
+  const raw = await getUserSetting(uid(), MAIN_CV_KEY);
+  const id = raw ? Number(raw) : NaN;
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const file = await getProfileFile(id);
+  if (!file) {
+    await deleteUserSetting(uid(), MAIN_CV_KEY);
+    return null;
+  }
+  return id;
+}
+
+export async function getMainCvFile(): Promise<ProfileFileMeta | null> {
+  const id = await getMainCvFileId();
+  if (!id) return null;
+  const file = await getProfileFile(id);
+  if (!file) return null;
+  return {
+    id: file.id,
+    filename: file.filename,
+    mime: file.mime,
+    size: file.size,
+    createdAt: file.createdAt,
+  };
+}
+
+export async function setMainCvFileId(id: number | null): Promise<ProfileFileMeta | null> {
+  if (id == null) {
+    await deleteUserSetting(uid(), MAIN_CV_KEY);
+    return null;
+  }
+  const file = await getProfileFile(id);
+  if (!file) throw new Error("File not found.");
+  await setUserSetting(uid(), MAIN_CV_KEY, String(id));
+  return {
+    id: file.id,
+    filename: file.filename,
+    mime: file.mime,
+    size: file.size,
+    createdAt: file.createdAt,
+  };
 }
 
 function toBytes(value: unknown): Uint8Array {

@@ -5,9 +5,10 @@ import MatchPage from "./pages/MatchPage";
 import HistoryPage from "./pages/HistoryPage";
 import MatchDetailPage from "./pages/MatchDetailPage";
 import SettingsPage from "./pages/SettingsPage";
-import AppModeToggle from "./components/AppModeToggle";
-import AuthGate, { useAuth } from "./components/AuthGate";
-import ThemeToggle from "./components/ThemeToggle";
+import AccountMenu from "./components/AccountMenu";
+import AuthGate from "./components/AuthGate";
+import BottomNav from "./components/BottomNav";
+import BrandMark from "./components/BrandMark";
 
 export default function App() {
   return (
@@ -18,15 +19,14 @@ export default function App() {
 }
 
 function AppShell() {
-  const { username, signOut } = useAuth();
-
   return (
     <div className="app-shell">
       <header className="topbar">
         <NavLink to="/" className="brand">
+          <BrandMark />
           Career<span>Fit</span>
         </NavLink>
-        <nav className="nav">
+        <nav className="nav nav-primary" aria-label="Primary">
           <NavLink to="/profile" className={({ isActive }) => (isActive ? "active" : "")}>
             Profile
           </NavLink>
@@ -39,24 +39,20 @@ function AppShell() {
           <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
             Settings
           </NavLink>
-          <span className="nav-user" title={username || ""}>
-            {username}
-          </span>
-          <button type="button" className="btn btn-ghost" onClick={() => signOut()}>
-            Sign out
-          </button>
-          <ThemeToggle />
-          <AppModeToggle />
         </nav>
+        <AccountMenu />
       </header>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/match" element={<MatchPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/history/:id" element={<MatchDetailPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Routes>
+      <main className="app-main">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/match" element={<MatchPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/history/:id" element={<MatchDetailPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Routes>
+      </main>
+      <BottomNav />
     </div>
   );
 }

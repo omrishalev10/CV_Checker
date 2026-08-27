@@ -58,6 +58,7 @@ export default function SettingsPage() {
   return (
     <section className="stack">
       <div>
+        <p className="kicker">Account</p>
         <h1>Settings</h1>
         <p className="lede">
           Signed in as <strong>{username}</strong>. Your profile, jobs, and API key belong only to this

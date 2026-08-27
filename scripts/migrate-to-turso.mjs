@@ -10,6 +10,9 @@
 import { createClient } from "@libsql/client";
 import path from "node:path";
 import fs from "node:fs";
+import dotenv from "dotenv";
+
+dotenv.config({ path: path.resolve(".env") });
 
 const force = process.argv.includes("--force");
 const dataDir = process.argv.find((a) => a.startsWith("--data="))?.slice(7) || "data";
@@ -71,6 +74,14 @@ await remote.executeMultiple(`
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS profile_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    mime TEXT,
+    size INTEGER NOT NULL,
+    content BLOB NOT NULL,
+    created_at TEXT NOT NULL
+  );
 `);
 
 const existing = await remote.execute("SELECT COUNT(*) c FROM analyses");
@@ -92,6 +103,7 @@ if (force) {
       "DELETE FROM analyses",
       "DELETE FROM profile",
       "DELETE FROM settings",
+      "DELETE FROM profile_files",
     ],
     "write"
   );
@@ -156,5 +168,18 @@ for (const r of settings.rows) {
   });
 }
 console.log(`settings copied: ${settings.rows.length} (includes your app password and AI key)`);
+
+try {
+  const files = await local.execute("SELECT id, filename, mime, size, content, created_at FROM profile_files ORDER BY id");
+  for (const r of files.rows) {
+    await remote.execute({
+      sql: "INSERT INTO profile_files (id, filename, mime, size, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      args: [Number(r.id), r.filename, r.mime, Number(r.size), r.content, r.created_at],
+    });
+  }
+  console.log(`profile files copied: ${files.rows.length}`);
+} catch {
+  console.log("profile files copied: 0 (table not present on local yet)");
+}
 
 console.log("\nMigration complete.");

@@ -49,6 +49,12 @@ export function parseProviderError(err: unknown): ProviderError {
   };
 }
 
+export function isTimeoutError(err: unknown): boolean {
+  const name = err && typeof err === "object" && "name" in err ? String((err as { name: unknown }).name) : "";
+  const msg = rawErrorText(err);
+  return name === "AbortError" || name === "TimeoutError" || /aborted|timed out|timeout/i.test(msg);
+}
+
 export function isRetryableAiError(err: unknown): boolean {
   const info = parseProviderError(err);
   const blob = `${info.code ?? ""} ${info.status ?? ""} ${info.message}`.toUpperCase();
@@ -74,6 +80,9 @@ export function isModelMissingError(err: unknown): boolean {
 export function humanizeAiError(err: unknown): Error {
   const info = parseProviderError(err);
   const blob = `${info.code ?? ""} ${info.status ?? ""} ${info.message}`;
+  if (isTimeoutError(err) || /timed out/i.test(blob)) {
+    return new Error("The AI model took too long. Try again, or paste a shorter job description.");
+  }
   if (info.code === 503 || info.status === "UNAVAILABLE" || /high demand|overloaded/i.test(blob)) {
     return new Error("The AI model is busy right now. Wait about a minute and try again.");
   }
