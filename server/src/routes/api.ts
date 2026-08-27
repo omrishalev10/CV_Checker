@@ -29,7 +29,8 @@ import { fetchJobUrl } from "../services/urlFetch.js";
 import { renderDocx, renderPdf, type TailoredCvDoc } from "../services/tailorExport.js";
 import type { SkillProfile } from "../types.js";
 import { emptyProfile } from "../types.js";
-import { deleteSetting, maskSecret, resolveApiKey, setSetting } from "../settings.js";
+import { deleteUserSetting, maskSecret, resolveApiKey, setUserSetting } from "../settings.js";
+import { currentUserId } from "../context.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -43,12 +44,16 @@ export function createApiRouter(): Router {
     res.json({ ok: true, service: "careerfit" });
   });
 
-  router.get("/settings", (_req, res) => {
-    const key = resolveApiKey();
-    res.json({
-      configured: Boolean(key),
-      maskedKey: key ? maskSecret(key) : null,
-    });
+  router.get("/settings", async (_req, res, next) => {
+    try {
+      const key = await resolveApiKey();
+      res.json({
+        configured: Boolean(key),
+        maskedKey: key ? maskSecret(key) : null,
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   router.put("/settings/api-key", async (req, res, next) => {
@@ -62,7 +67,7 @@ export function createApiRouter(): Router {
         res.status(400).json({ error: "That doesn't look like a valid API key." });
         return;
       }
-      await setSetting("api_key", apiKey);
+      await setUserSetting(currentUserId(), "api_key", apiKey);
       resetAiClient();
       res.json({ configured: true, maskedKey: maskSecret(apiKey) });
     } catch (err) {
@@ -72,9 +77,10 @@ export function createApiRouter(): Router {
 
   router.delete("/settings/api-key", async (_req, res, next) => {
     try {
-      await deleteSetting("api_key");
-      await deleteSetting("gemini_api_key");
-      await deleteSetting("anthropic_api_key");
+      const userId = currentUserId();
+      await deleteUserSetting(userId, "api_key");
+      await deleteUserSetting(userId, "gemini_api_key");
+      await deleteUserSetting(userId, "anthropic_api_key");
       resetAiClient();
       res.json({ configured: false, maskedKey: null });
     } catch (err) {

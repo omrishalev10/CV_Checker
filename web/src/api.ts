@@ -103,6 +103,7 @@ export interface MatchSummary {
 export interface AuthStatus {
   enabled: boolean;
   authenticated: boolean;
+  username?: string | null;
 }
 
 /** Set by AuthGate so an expired session anywhere in the app bounces back to the lock screen. */
@@ -233,21 +234,25 @@ export const api = {
     }).then(parseJson),
   clearApiKey: () => fetch("/api/settings/api-key", { method: "DELETE" }).then(parseJson),
   authStatus: (): Promise<AuthStatus> => fetch("/api/auth/status").then(parseJson),
-  login: (password: string): Promise<AuthStatus> =>
+  signup: (username: string, password: string): Promise<AuthStatus> =>
+    fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    }).then(parseJson),
+  login: (username: string, password: string): Promise<AuthStatus> =>
     fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ username, password }),
     }).then(parseJson),
   logout: (): Promise<AuthStatus> => fetch("/api/auth/logout", { method: "POST" }).then(parseJson),
-  setPassword: (password: string): Promise<AuthStatus> =>
+  setPassword: (password: string, currentPassword?: string): Promise<AuthStatus> =>
     fetch("/api/auth/password", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, currentPassword, newPassword: password }),
     }).then(parseJson),
-  removePassword: (): Promise<AuthStatus & { note?: string }> =>
-    fetch("/api/auth/password", { method: "DELETE" }).then(parseJson),
   saveGithub: (url: string) =>
     fetch("/api/profile/github", {
       method: "PUT",

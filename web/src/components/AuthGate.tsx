@@ -12,13 +12,15 @@ import { api, onAuthRequired } from "../api";
 interface AuthContextValue {
   enabled: boolean;
   authenticated: boolean;
+  username: string | null;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
-  enabled: false,
-  authenticated: true,
+  enabled: true,
+  authenticated: false,
+  username: null,
   refresh: async () => {},
   signOut: async () => {},
 });
@@ -29,15 +31,15 @@ export function useAuth(): AuthContextValue {
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
-  const [enabled, setEnabled] = useState(false);
-  const [authenticated, setAuthenticated] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const status = await api.authStatus();
-      setEnabled(status.enabled);
-      setAuthenticated(status.authenticated);
+      setAuthenticated(Boolean(status.authenticated));
+      setUsername(status.username || null);
       setStatusError(null);
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : "Could not reach the server.");
@@ -49,6 +51,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     await api.logout();
     setAuthenticated(false);
+    setUsername(null);
   }, []);
 
   useEffect(() => {
@@ -57,8 +60,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     onAuthRequired(() => {
-      setEnabled(true);
       setAuthenticated(false);
+      setUsername(null);
     });
     return () => onAuthRequired(null);
   }, []);
@@ -85,32 +88,50 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (enabled && !authenticated) {
-    return <LockScreen onUnlocked={refresh} />;
+  if (!authenticated) {
+    return <AccountScreen onUnlocked={refresh} />;
   }
 
   return (
-    <AuthContext.Provider value={{ enabled, authenticated, refresh, signOut }}>
+    <AuthContext.Provider
+      value={{ enabled: true, authenticated, username, refresh, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
-function LockScreen({ onUnlocked }: { onUnlocked: () => Promise<void> }) {
+function AccountScreen({ onUnlocked }: { onUnlocked: () => Promise<void> }) {
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const mismatch = mode === "signup" && confirm.length > 0 && password !== confirm;
+  const tooShort = password.length > 0 && password.length < 8;
+  const canSubmit =
+    username.trim().length >= 3 &&
+    password.length >= 8 &&
+    !mismatch &&
+    (mode === "login" || password === confirm);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.login(password);
+      if (mode === "signup") {
+        await api.signup(username.trim(), password);
+      } else {
+        await api.login(username.trim(), password);
+      }
       setPassword("");
+      setConfirm("");
       await onUnlocked();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed");
+      setError(err instanceof Error ? err.message : "Could not continue");
     } finally {
       setBusy(false);
     }
@@ -123,22 +144,65 @@ function LockScreen({ onUnlocked }: { onUnlocked: () => Promise<void> }) {
           <h1 className="brand">
             Career<span>Fit</span>
           </h1>
-          <p className="lede">Enter your app password to continue.</p>
+          <p className="lede">
+            {mode === "login"
+              ? "Sign in to your account. Your CVs and job matches stay private to you."
+              : "Create a free account. You will add your own AI key in Settings."}
+          </p>
         </div>
+
+        <div className="tabs">
+          <button type="button" className={`tab ${mode === "login" ? "active" : ""}`} onClick={() => setMode("login")}>
+            Sign in
+          </button>
+          <button type="button" className={`tab ${mode === "signup" ? "active" : ""}`} onClick={() => setMode("signup")}>
+            Create account
+          </button>
+        </div>
+
         {error && <div className="error">{error}</div>}
+
         <label className="field">
-          Password
+          Username
           <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            type="text"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             disabled={busy}
             autoFocus
           />
         </label>
-        <button className="btn btn-primary" disabled={busy || !password}>
-          {busy ? "Checking…" : "Unlock"}
+        <label className="field">
+          Password
+          <input
+            type="password"
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        {mode === "signup" && (
+          <label className="field">
+            Confirm password
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+        )}
+        {tooShort && <p className="muted">Use at least 8 characters.</p>}
+        {mismatch && <p className="muted">Passwords don't match.</p>}
+
+        <button className="btn btn-primary" disabled={busy || !canSubmit}>
+          {busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
         </button>
       </form>
     </div>

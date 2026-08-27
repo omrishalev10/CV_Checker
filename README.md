@@ -1,6 +1,6 @@
 # CareerFit
 
-Personal job-match assistant: ingest your CV into a structured skill profile, score job descriptions (text, screenshot, or URL) with Gemini, and generate ATS-friendly tailored CVs — without inventing experience.
+Web app for job-fit scoring: each person signs up, builds a skill profile from their CV, scores job descriptions with Gemini, and generates ATS-friendly tailored CVs — without inventing experience.
 
 ## Architecture
 
@@ -16,23 +16,21 @@ Personal job-match assistant: ingest your CV into a structured skill profile, sc
 
 **Fit score:** 0–100 with labels — Low (&lt;40), Medium (40–64), High (65–84), Strong (≥85).
 
-**Data sensitivity:** run locally and your CV content stays on your machine in SQLite under `./data`. Deploy it and that data moves to Turso instead. Your AI API key lives only on the server (environment and/or **Settings**) — never in the frontend.
+**Data sensitivity:** each account's CV content and AI key stay in that user's rows in Turso (or local SQLite). Keys are never sent to the browser.
 
 ## Access control
 
-CareerFit ships unlocked, which is fine when it only listens on your own machine. **Set an app password before the server is reachable from anywhere else** — every endpoint (profile, history, tailored CV downloads, API key management) is otherwise open to whoever can reach the port.
+Anyone can create a username and password. Each account has its own profile, files, job history, tailored CVs, and AI API key. Turso (or local SQLite) stores everything.
 
-Set one under **Settings → App password**, or headlessly with `APP_PASSWORD=...` in `.env`.
+Your original single-user data is migrated to account `omri` (or `OWNER_USERNAME`) using the existing app password / `APP_PASSWORD`.
 
 | Behaviour | Detail |
 | --- | --- |
-| Password storage | scrypt hash + per-install random salt, in SQLite |
-| Session | HttpOnly cookie, 30 days, token stored only as a SHA-256 hash |
+| Password storage | scrypt hash + random salt, per user |
+| Session | HttpOnly cookie, 30 days, SHA-256 token hash |
 | Sign out | Ends that device's session only |
-| Change password | Revokes every session everywhere |
+| Change password | Revokes that user's sessions everywhere |
 | Brute force | 8 failed attempts per IP triggers a 5-minute block |
-
-`APP_PASSWORD` in the environment takes effect whenever no password is set in the app, and **Remove password** cannot switch it off — delete it from `.env` instead.
 
 ## Setup
 

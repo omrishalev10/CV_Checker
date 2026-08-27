@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAuthConfigured, requireAuth } from "./auth.js";
+import { requireAuth } from "./auth.js";
 import { initDb } from "./db.js";
 import { createApiRouter } from "./routes/api.js";
 import { createAuthRouter } from "./routes/auth.js";
@@ -53,13 +53,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 // Hosts like Render route external traffic to this port and require binding on all interfaces.
 const server = app.listen(port, "0.0.0.0", () => {
   console.log(`CareerFit API on port ${port}`);
-  if (isAuthConfigured()) {
-    console.log("Password lock: ON");
-  } else {
-    console.log(
-      "Password lock: OFF — anyone who can reach this port has full access. Set one in Settings, or via APP_PASSWORD, before exposing it."
-    );
-  }
+  console.log("Accounts: sign up or log in required");
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

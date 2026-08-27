@@ -1,11 +1,9 @@
 /**
- * End-to-end check of the password gate.
- * Run against a throwaway server, e.g.:
+ * End-to-end check of accounts and data isolation.
  *   PORT=3020 DATA_DIR=tmp-authtest node server/dist/index.js
  *   node scripts/test-auth.mjs http://localhost:3020
  */
 const base = process.argv[2] || "http://localhost:3020";
-const PASSWORD = "testpass123";
 
 let cookie = null;
 let failures = 0;
@@ -44,84 +42,78 @@ async function call(method, path, { body, withCookie = true } = {}) {
 function check(label, actual, expected) {
   const pass = actual === expected;
   if (!pass) failures += 1;
-  console.log(`${pass ? "PASS" : "FAIL"}  ${label} (got ${actual}, expected ${expected})`);
+  console.log(`${pass ? "PASS" : "FAIL"}  ${label} (got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)})`);
 }
 
-const status0 = await call("GET", "/api/auth/status");
-check("starts unlocked", status0.data.enabled, false);
-check("open access before password", (await call("GET", "/api/profile")).status, 200);
+check("health is public", (await call("GET", "/api/health", { withCookie: false })).status, 200);
+check("profile requires sign-in", (await call("GET", "/api/profile", { withCookie: false })).status, 401);
 
-check(
-  "rejects short password",
-  (await call("PUT", "/api/auth/password", { body: { password: "short" } })).status,
-  400
-);
+const alice = await call("POST", "/api/auth/signup", {
+  body: { username: "alice", password: "alicepass1" },
+});
+check("alice can sign up", alice.status, 200);
+check("alice cookie issued", cookie !== null, true);
+const aliceCookie = cookie;
 
-const set = await call("PUT", "/api/auth/password", { body: { password: PASSWORD } });
-check("sets password", set.status, 200);
-check("issues a session cookie", cookie !== null, true);
+check("alice username in status", (await call("GET", "/api/auth/status")).data.username, "alice");
+check("alice can read empty profile", (await call("GET", "/api/profile")).status, 200);
 
-check("reports locked", (await call("GET", "/api/auth/status")).data.enabled, true);
-check("session can read profile", (await call("GET", "/api/profile")).status, 200);
+await call("PUT", "/api/profile", {
+  body: {
+    profile: {
+      summary: "Alice only",
+      skills: [],
+      experience: [],
+      education: [],
+      certifications: [],
+    },
+  },
+});
 
-check("blocks profile without cookie", (await call("GET", "/api/profile", { withCookie: false })).status, 401);
-check(
-  "blocks tailoring without cookie",
-  (await call("POST", "/api/matches/1/tailor", { withCookie: false })).status,
-  401
-);
-check(
-  "blocks CV download without cookie",
-  (await call("GET", "/api/matches/1/cv/pdf", { withCookie: false })).status,
-  401
-);
-check(
-  "blocks API key read without cookie",
-  (await call("GET", "/api/settings", { withCookie: false })).status,
-  401
-);
+cookie = null;
+const bob = await call("POST", "/api/auth/signup", {
+  body: { username: "bob", password: "bobpass123" },
+});
+check("bob can sign up", bob.status, 200);
+const bobCookie = cookie;
 
-const saved = cookie;
+const bobProfile = await call("GET", "/api/profile");
+check("bob does not see alice summary", bobProfile.data.profile?.summary === "Alice only", false);
+
+cookie = aliceCookie;
+const aliceProfile = await call("GET", "/api/profile");
+check("alice still sees her summary", aliceProfile.data.profile?.summary, "Alice only");
+
 cookie = null;
 check(
-  "rejects wrong password",
-  (await call("POST", "/api/auth/login", { body: { password: "wrongwrong" } })).status,
+  "duplicate username rejected",
+  (await call("POST", "/api/auth/signup", { body: { username: "Alice", password: "otherpass1" } })).status,
+  409
+);
+
+check(
+  "login rejects wrong password",
+  (await call("POST", "/api/auth/login", { body: { username: "alice", password: "nope-nope" } })).status,
   401
 );
-check("no cookie after failed login", cookie === null, true);
 
-check(
-  "accepts correct password",
-  (await call("POST", "/api/auth/login", { body: { password: PASSWORD } })).status,
-  200
-);
-check("login issues a cookie", cookie !== null, true);
-check("new session works", (await call("GET", "/api/profile")).status, 200);
+const login = await call("POST", "/api/auth/login", {
+  body: { username: "alice", password: "alicepass1" },
+});
+check("alice can log in", login.status, 200);
 
-const secondSession = cookie;
 check("logout succeeds", (await call("POST", "/api/auth/logout")).status, 200);
-check("cookie cleared on logout", cookie === null, true);
+check("logged-out profile blocked", (await call("GET", "/api/profile")).status, 401);
 
-cookie = secondSession;
-check("logged-out session is revoked", (await call("GET", "/api/profile")).status, 401);
-
-// Signing out on one device must not sign out the others.
-cookie = saved;
-check("other device stays signed in", (await call("GET", "/api/profile")).status, 200);
-
-// Changing the password is the "log everything out" lever.
-check(
-  "password change succeeds",
-  (await call("PUT", "/api/auth/password", { body: { password: `${PASSWORD}-new` } })).status,
-  200
-);
-cookie = saved;
-check("password change revokes old sessions", (await call("GET", "/api/profile")).status, 401);
+cookie = bobCookie;
+check("bob stays signed in after alice logout", (await call("GET", "/api/profile")).status, 200);
 
 cookie = null;
 let sawRateLimit = false;
 for (let i = 0; i < 12; i += 1) {
-  const res = await call("POST", "/api/auth/login", { body: { password: `bad-${i}` } });
+  const res = await call("POST", "/api/auth/login", {
+    body: { username: "alice", password: `bad-${i}` },
+  });
   if (res.status === 429) {
     sawRateLimit = true;
     break;

@@ -134,6 +134,19 @@ select {
   background: var(--accent-soft);
 }
 
+.nav-user {
+  color: var(--muted);
+  padding: 0.55rem 0.65rem;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.9rem;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 h1,
 h2,
 h3 {
@@ -503,7 +516,7 @@ select {
 }
 
 .lock-card {
-  width: min(24rem, 100%);
+  width: min(26rem, 100%);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);

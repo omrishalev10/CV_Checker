@@ -30,8 +30,8 @@ export default function HomePage() {
             stay direct — no false encouragement.
           </p>
           <p className="muted">
-            Your data lives in your CareerFit database. Add an AI API key under Settings — it never
-            leaves the server.
+            Your data lives in your own CareerFit account on this app. Add an AI API key under Settings —
+            it never leaves the server and is not shared with other users.
           </p>
         </div>
       </div>

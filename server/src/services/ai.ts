@@ -25,42 +25,40 @@ function geminiModelChain(): string[] {
   return [primary, ...GEMINI_FALLBACK_MODELS.filter((model) => model !== primary)];
 }
 
-let geminiClient: GoogleGenAI | null = null;
-let geminiKey: string | null = null;
-let anthropicClient: Anthropic | null = null;
-let anthropicKey: string | null = null;
+const geminiByKey = new Map<string, GoogleGenAI>();
+const anthropicByKey = new Map<string, Anthropic>();
 
 export function resetAiClient(): void {
-  geminiClient = null;
-  geminiKey = null;
-  anthropicClient = null;
-  anthropicKey = null;
+  geminiByKey.clear();
+  anthropicByKey.clear();
 }
 
-function requireKey(): string {
-  const key = resolveApiKey();
+async function requireKey(): Promise<string> {
+  const key = await resolveApiKey();
   if (!key) {
     throw new Error("AI API key is not configured. Add it in Settings.");
   }
   return key;
 }
 
-function getGemini(): GoogleGenAI {
-  const key = requireKey();
-  if (!geminiClient || geminiKey !== key) {
-    geminiClient = new GoogleGenAI({ apiKey: key });
-    geminiKey = key;
+async function getGemini(): Promise<GoogleGenAI> {
+  const key = await requireKey();
+  let client = geminiByKey.get(key);
+  if (!client) {
+    client = new GoogleGenAI({ apiKey: key });
+    geminiByKey.set(key, client);
   }
-  return geminiClient;
+  return client;
 }
 
-function getAnthropic(): Anthropic {
-  const key = requireKey();
-  if (!anthropicClient || anthropicKey !== key) {
-    anthropicClient = new Anthropic({ apiKey: key });
-    anthropicKey = key;
+async function getAnthropic(): Promise<Anthropic> {
+  const key = await requireKey();
+  let client = anthropicByKey.get(key);
+  if (!client) {
+    client = new Anthropic({ apiKey: key });
+    anthropicByKey.set(key, client);
   }
-  return anthropicClient;
+  return client;
 }
 
 type TextOrVision =
@@ -96,7 +94,7 @@ async function completeJsonGemini<T>(
     const model = models[m];
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const response = await getGemini().models.generateContent({
+        const response = await (await getGemini()).models.generateContent({
           model,
           contents,
           config: {
@@ -155,7 +153,7 @@ async function completeJsonAnthropic<T>(
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await getAnthropic().messages.create({
+      const response = await (await getAnthropic()).messages.create({
         model: getModel(),
         max_tokens: 8192,
         temperature: opts.temperature ?? 0.2,
@@ -190,7 +188,7 @@ async function completeJson<T>(
   user: TextOrVision,
   opts: CompleteOptions = {}
 ): Promise<T> {
-  if (getProvider() === "anthropic") return completeJsonAnthropic<T>(system, user, opts);
+  if ((await getProvider()) === "anthropic") return completeJsonAnthropic<T>(system, user, opts);
   return completeJsonGemini<T>(system, user, opts);
 }
 

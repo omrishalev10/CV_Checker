@@ -3,6 +3,7 @@ import { api } from "../api";
 import { useAuth } from "../components/AuthGate";
 
 export default function SettingsPage() {
+  const { username, signOut } = useAuth();
   const [configured, setConfigured] = useState(false);
   const [maskedKey, setMaskedKey] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -30,7 +31,7 @@ export default function SettingsPage() {
       setConfigured(true);
       setMaskedKey(data.maskedKey);
       setApiKey("");
-      setOk("API key saved. It stays on this device and is never shown in full again.");
+      setOk("API key saved for your account. It is never shown in full again.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save key");
     } finally {
@@ -58,20 +59,26 @@ export default function SettingsPage() {
     <section className="stack">
       <div>
         <h1>Settings</h1>
-        <p className="lede">API key, app password, and appearance. Dark mode is in the header on every page.</p>
+        <p className="lede">
+          Signed in as <strong>{username}</strong>. Your profile, jobs, and API key belong only to this
+          account.
+        </p>
       </div>
 
       {error && <div className="error">{error}</div>}
       {ok && <div className="success">{ok}</div>}
 
       <form className="panel stack" onSubmit={onSave}>
-        <h2>API key</h2>
+        <h2>Your AI API key</h2>
+        <p className="muted">
+          Each account uses its own Gemini or Anthropic key. CareerFit does not share keys between users.
+        </p>
         <p>
           Status:{" "}
           {configured ? (
             <span className="badge strong">Saved · {maskedKey}</span>
           ) : (
-            <span className="badge low">Not set</span>
+            <span className="badge low">Not set — add a key before checking jobs</span>
           )}
         </p>
         <label className="field">
@@ -98,12 +105,20 @@ export default function SettingsPage() {
       </form>
 
       <PasswordPanel />
+
+      <div className="panel stack">
+        <h2>Session</h2>
+        <button type="button" className="btn btn-ghost" onClick={() => signOut()} disabled={busy}>
+          Sign out
+        </button>
+      </div>
     </section>
   );
 }
 
 function PasswordPanel() {
-  const { enabled, refresh, signOut } = useAuth();
+  const { refresh } = useAuth();
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -119,11 +134,12 @@ function PasswordPanel() {
     setError(null);
     setOk(null);
     try {
-      await api.setPassword(password);
+      await api.setPassword(password, currentPassword);
+      setCurrentPassword("");
       setPassword("");
       setConfirm("");
       await refresh();
-      setOk("Password set. Other signed-in devices were logged out.");
+      setOk("Password updated. Other devices were signed out.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to set password");
     } finally {
@@ -131,38 +147,24 @@ function PasswordPanel() {
     }
   }
 
-  async function onRemove() {
-    setBusy(true);
-    setError(null);
-    setOk(null);
-    try {
-      const data = await api.removePassword();
-      await refresh();
-      setOk(data.note || "Password removed. Anyone who can reach this server now has full access.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to remove password");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <form className="panel stack" onSubmit={onSave}>
-      <h2>App password</h2>
-      <p>
-        Status:{" "}
-        {enabled ? (
-          <span className="badge strong">Locked</span>
-        ) : (
-          <span className="badge low">No password — open to anyone on your network</span>
-        )}
-      </p>
-
+      <h2>Change password</h2>
       {error && <div className="error">{error}</div>}
       {ok && <div className="success">{ok}</div>}
 
       <label className="field">
-        {enabled ? "New password" : "Password"}
+        Current password
+        <input
+          type="password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          disabled={busy}
+        />
+      </label>
+      <label className="field">
+        New password
         <input
           type="password"
           autoComplete="new-password"
@@ -172,7 +174,7 @@ function PasswordPanel() {
         />
       </label>
       <label className="field">
-        Confirm
+        Confirm new password
         <input
           type="password"
           autoComplete="new-password"
@@ -185,24 +187,12 @@ function PasswordPanel() {
       {tooShort && <p className="muted">Use at least 8 characters.</p>}
       {mismatch && <p className="muted">Passwords don't match.</p>}
 
-      <div className="row">
-        <button
-          className="btn btn-primary"
-          disabled={busy || password.length < 8 || password !== confirm}
-        >
-          {enabled ? "Change password" : "Set password"}
-        </button>
-        {enabled && (
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => signOut()} disabled={busy}>
-              Sign out
-            </button>
-            <button type="button" className="btn btn-danger" onClick={onRemove} disabled={busy}>
-              Remove password
-            </button>
-          </>
-        )}
-      </div>
+      <button
+        className="btn btn-primary"
+        disabled={busy || !currentPassword || password.length < 8 || password !== confirm}
+      >
+        Update password
+      </button>
     </form>
   );
 }
